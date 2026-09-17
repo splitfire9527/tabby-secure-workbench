@@ -117,17 +117,54 @@ import { SavedCommand } from './command.model'
   `,
   styles: [
     `
+      :host {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
+      }
       .command-library-container {
         display: flex;
         flex-direction: column;
         height: 100%;
+        width: 100%;
+        overflow: hidden;
+      }
+      .search-bar {
+        flex-shrink: 0;
+      }
+      .actions-bar {
+        flex-shrink: 0;
+      }
+      .command-list {
+        flex: 1;
         overflow-y: auto;
+        min-height: 0;
+        padding-right: 2px;
+      }
+      .category-header {
+        color: #61afef !important;
+        font-size: 11px;
+        letter-spacing: 0.5px;
       }
       .command-item {
-        background: rgba(255, 255, 255, 0.03);
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        border-radius: 4px;
+        transition: background 0.15s ease;
       }
       .command-item:hover {
         background: rgba(255, 255, 255, 0.08);
+      }
+      .command-name {
+        color: #e5c07b;
+        font-size: 12px;
+      }
+      .command-snippet code {
+        color: #98c379;
+        font-size: 11px;
+        background: transparent;
       }
       .modal-backdrop-custom {
         position: absolute;
@@ -135,11 +172,16 @@ import { SavedCommand } from './command.model'
         left: 0;
         right: 0;
         bottom: 0;
-        background: rgba(0, 0, 0, 0.6);
+        background: rgba(0, 0, 0, 0.7);
         display: flex;
         align-items: center;
         justify-content: center;
         z-index: 100;
+      }
+      .modal-backdrop-custom .card {
+        background: #282c34;
+        color: #abb2bf;
+        border: 1px solid #3e4451;
       }
     `,
   ],

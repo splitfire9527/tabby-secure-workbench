@@ -3,29 +3,85 @@ import { Component, Input, Output, EventEmitter } from '@angular/core'
 @Component({
   selector: 'workbench-header',
   template: `
-    <div class="workbench-header">
-      <div class="session-title text-truncate d-flex align-items-center">
-        <span>{{ sessionTitle }}</span>
-        <span
-          class="status-badge text-uppercase font-weight-bold"
-          [ngClass]="{
-            connected: connectionState === 'Connected',
-            connecting: connectionState === 'Connecting',
-            disconnected: connectionState === 'Disconnected'
-          }"
-        >
-          {{ connectionState }}
-        </span>
-      </div>
-
-      <workbench-toolbar
-        [activeTerminalTab]="activeTerminalTab"
-        [viewMode]="viewMode"
-        (viewModeChange)="viewModeChange.emit($event)"
-        (quickConnect)="quickConnect.emit($event)"
-      ></workbench-toolbar>
+    <div class="session-info">
+      <span class="session-title">{{ sessionTitle }}</span>
+      <span
+        class="status-badge"
+        [ngClass]="{
+          connected: connectionState === 'Connected',
+          connecting: connectionState === 'Connecting',
+          disconnected: connectionState === 'Disconnected'
+        }"
+      >
+        {{ connectionState }}
+      </span>
     </div>
+
+    <workbench-toolbar
+      [activeTerminalTab]="activeTerminalTab"
+      [viewMode]="viewMode"
+      (viewModeChange)="viewModeChange.emit($event)"
+      (quickConnect)="quickConnect.emit($event)"
+    ></workbench-toolbar>
   `,
+  styles: [
+    `
+      :host {
+        display: flex;
+        width: 100%;
+        height: 40px;
+        min-height: 40px;
+        max-height: 40px;
+        background: #282c34;
+        border-bottom: 1px solid #3e4451;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 12px;
+        box-sizing: border-box;
+        flex-shrink: 0;
+        user-select: none;
+      }
+      .session-info {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        overflow: hidden;
+      }
+      .session-title {
+        font-weight: 600;
+        font-size: 13px;
+        color: #d7dae0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .status-badge {
+        font-size: 10px;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        flex-shrink: 0;
+      }
+      .status-badge.connected {
+        background: rgba(152, 195, 121, 0.2);
+        color: #98c379;
+        border: 1px solid rgba(152, 195, 121, 0.4);
+      }
+      .status-badge.connecting {
+        background: rgba(97, 175, 239, 0.2);
+        color: #61afef;
+        border: 1px solid rgba(97, 175, 239, 0.4);
+      }
+      .status-badge.disconnected {
+        background: rgba(224, 108, 117, 0.2);
+        color: #e06c75;
+        border: 1px solid rgba(224, 108, 117, 0.4);
+      }
+    `,
+  ],
 })
 export class WorkbenchHeaderComponent {
   @Input() activeTerminalTab: any

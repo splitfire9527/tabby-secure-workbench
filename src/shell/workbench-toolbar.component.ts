@@ -15,7 +15,10 @@ import { SessionLoggerService } from '../session-logging/session-logger.service'
         (click)="reconnect()"
         title="Reconnect SSH Session"
       >
-        <span>&#x21bb;</span> Reconnect
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+        </svg>
+        <span>Reconnect</span>
       </button>
 
       <!-- Port Forwarding -->
@@ -24,7 +27,13 @@ import { SessionLoggerService } from '../session-logging/session-logger.service'
         (click)="showPortForwardDialog = true"
         title="Port Forwarding"
       >
-        <span>&#x21c4;</span> Forwarding
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="17 1 21 5 17 9"></polyline>
+          <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+          <polyline points="7 23 3 19 7 15"></polyline>
+          <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+        </svg>
+        <span>Forwarding</span>
       </button>
 
       <!-- Quick Connect -->
@@ -33,7 +42,10 @@ import { SessionLoggerService } from '../session-logging/session-logger.service'
         (click)="showQuickConnectDialog = true"
         title="Quick Connect"
       >
-        <span>&#x26a1;</span> Quick Connect
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+        </svg>
+        <span>Quick Connect</span>
       </button>
 
       <!-- View Toggle: SFTP+ vs PTY -->
@@ -43,8 +55,14 @@ import { SessionLoggerService } from '../session-logging/session-logger.service'
         (click)="toggleViewMode()"
         title="Toggle SFTP+ and Terminal View"
       >
-        <span>{{ viewMode === 'sftp' ? '💻' : '📁' }}</span>
-        {{ viewMode === 'sftp' ? 'Terminal PTY' : 'SFTP+' }}
+        <svg *ngIf="viewMode !== 'sftp'" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+        </svg>
+        <svg *ngIf="viewMode === 'sftp'" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="4 17 10 11 4 5"></polyline>
+          <line x1="12" y1="19" x2="20" y2="19"></line>
+        </svg>
+        <span>{{ viewMode === 'sftp' ? 'Terminal PTY' : 'SFTP+' }}</span>
       </button>
 
       <!-- Terminal Encoding -->
@@ -53,7 +71,12 @@ import { SessionLoggerService } from '../session-logging/session-logger.service'
         (click)="showEncodingDialog = true"
         [title]="'Current Encoding: ' + currentEncoding"
       >
-        <span>&#x1f524;</span> {{ currentEncoding }}
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="4 7 4 4 20 4 20 7"></polyline>
+          <line x1="9" y1="20" x2="15" y2="20"></line>
+          <line x1="12" y1="4" x2="12" y2="20"></line>
+        </svg>
+        <span>{{ currentEncoding }}</span>
       </button>
 
       <!-- Session Logging -->
@@ -64,7 +87,13 @@ import { SessionLoggerService } from '../session-logging/session-logger.service'
         [title]="isLoggingActive ? 'Stop Session Logging' : 'Start Session Logging'"
       >
         <span *ngIf="isLoggingActive" class="recording-dot mr-1"></span>
-        <span>&#x1f4dd;</span> {{ isLoggingActive ? 'Recording' : 'Log' }}
+        <svg *ngIf="!isLoggingActive" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="16" y1="13" x2="8" y2="13"></line>
+          <line x1="16" y1="17" x2="8" y2="17"></line>
+        </svg>
+        <span>{{ isLoggingActive ? 'Recording' : 'Log' }}</span>
       </button>
     </div>
 
@@ -183,6 +212,17 @@ import { SessionLoggerService } from '../session-logging/session-logger.service'
   `,
   styles: [
     `
+      :host {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-shrink: 0;
+      }
+      .toolbar-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
       .modal-dialog-backdrop {
         position: fixed;
         top: 0;
@@ -195,6 +235,16 @@ import { SessionLoggerService } from '../session-logging/session-logger.service'
         justify-content: center;
         z-index: 10000;
       }
+      .modal-dialog-backdrop .card {
+        background: #282c34 !important;
+        color: #abb2bf !important;
+        border: 1px solid #3e4451 !important;
+      }
+      .modal-dialog-backdrop .form-control {
+        background: #1e2227 !important;
+        border-color: #3e4451 !important;
+        color: #fff !important;
+      }
       .btn-toolbar-item {
         background: transparent;
         border: 1px solid transparent;
@@ -205,7 +255,9 @@ import { SessionLoggerService } from '../session-logging/session-logger.service'
         cursor: pointer;
         display: inline-flex;
         align-items: center;
-        gap: 4px;
+        gap: 6px;
+        white-space: nowrap;
+        user-select: none;
       }
       .btn-toolbar-item:hover {
         background: #2c313a;

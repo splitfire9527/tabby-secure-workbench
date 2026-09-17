@@ -17,6 +17,7 @@ import { WorkbenchConfigProvider } from './config/workbench-config.provider'
 
 // Themes
 import { SecureCrtColorSchemeProvider } from './themes/securecrt-classic'
+import './themes/workbench-theme.scss'
 
 // Codec
 import { CodecTerminalDecorator, CodecRegistryService } from './terminal-codec/codec-decorator'

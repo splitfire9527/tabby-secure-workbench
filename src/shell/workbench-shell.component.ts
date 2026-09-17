@@ -53,94 +53,101 @@ import { CrossTransferRelayService } from '../cross-transfer/cross-transfer-rela
           (applyDirectoryPair)="onApplyDirectoryPair($event)"
         ></workbench-drawer>
 
-        <!-- Workspace Viewport -->
-        <div class="workbench-workspace">
-          <!-- PTY Terminal View -->
-          <div
-            class="terminal-pane"
-            [style.display]="viewMode === 'pty' ? 'block' : 'none'"
-            style="width: 100%; height: 100%; position: relative;"
-          >
-            <ng-container #terminalHost></ng-container>
-            <div *ngIf="!embeddedTerminalTab" class="d-flex align-items-center justify-content-center h-100 text-muted">
-              <div class="text-center">
-                <h6>No active terminal in this Workbench Tab</h6>
-                <button class="btn btn-sm btn-primary mt-2" (click)="launchDefaultTerminal()">
-                  Open Terminal
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- SFTP+ Overlay View -->
-          <div
-            class="sftp-pane p-3"
-            [style.display]="viewMode === 'sftp' ? 'block' : 'none'"
-            style="overflow-y: auto;"
-          >
-            <div class="d-flex justify-content-between align-items-center mb-3">
-              <h5 class="m-0 text-white font-weight-bold">SFTP+ Dual-Pane File Manager</h5>
-              <div class="d-flex align-items-center">
-                <button
-                  *ngIf="clipboard.hasItem()"
-                  class="btn btn-sm btn-outline-info mr-2"
-                  (click)="pasteFromOtherConnection()"
-                  title="Paste file copied from another remote connection"
-                >
-                  &#x1f4cb; Remote Paste (from other host)
-                </button>
-                <button class="btn btn-sm btn-outline-secondary" (click)="viewMode = 'pty'">
-                  &larr; Back to Terminal
+        <!-- Right Viewport Column: Workspace Viewport + Bottom Dock -->
+        <div class="workbench-content">
+          <div class="workbench-workspace">
+            <!-- PTY Terminal View -->
+            <div
+              class="terminal-pane"
+              [style.display]="viewMode === 'pty' ? 'block' : 'none'"
+            >
+              <ng-container #terminalHost></ng-container>
+              <div *ngIf="!embeddedTerminalTab" class="no-session-placeholder">
+                <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="#4b5263" stroke-width="1.5">
+                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                  <line x1="8" y1="21" x2="16" y2="21"></line>
+                  <line x1="12" y1="17" x2="12" y2="21"></line>
+                </svg>
+                <h6 class="mt-3 mb-1 text-light">No Active Terminal</h6>
+                <p class="text-muted small mb-3">Select an active session from the drawer or launch a new terminal.</p>
+                <button class="btn btn-sm btn-primary" (click)="launchDefaultTerminal()">
+                  + Open Terminal
                 </button>
               </div>
             </div>
 
-            <!-- Dual-Pane mock/view representation -->
-            <div class="row" style="height: calc(100% - 60px);">
-              <!-- Local Pane -->
-              <div class="col-6 h-100">
-                <div class="card h-100 border-secondary">
-                  <div class="card-header py-2 font-weight-bold small bg-dark d-flex justify-content-between align-items-center">
-                    <span>💻 Local: {{ localCurrentPath }}</span>
-                    <button class="btn btn-xs btn-outline-secondary py-0" (click)="refreshLocal()">Refresh</button>
-                  </div>
-                  <div class="card-body p-2" style="overflow-y: auto;">
-                    <div class="text-muted small">Local filesystem view ready</div>
-                  </div>
+            <!-- SFTP+ Overlay View -->
+            <div
+              class="sftp-pane"
+              [style.display]="viewMode === 'sftp' ? 'flex' : 'none'"
+            >
+              <div class="sftp-top-bar d-flex justify-content-between align-items-center mb-2">
+                <div class="d-flex align-items-center">
+                  <span class="font-weight-bold text-light mr-2">SFTP+ Dual-Pane</span>
+                  <span class="badge badge-secondary badge-sm">Integrated</span>
+                </div>
+                <div class="d-flex align-items-center">
+                  <button
+                    *ngIf="clipboard.hasItem()"
+                    class="btn btn-sm btn-outline-info mr-2"
+                    (click)="pasteFromOtherConnection()"
+                    title="Paste file copied from another remote connection"
+                  >
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" class="mr-1">
+                      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+                      <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+                    </svg>
+                    Remote Paste
+                  </button>
+                  <button class="btn btn-sm btn-outline-secondary" (click)="viewMode = 'pty'">
+                    &larr; Back to Terminal
+                  </button>
                 </div>
               </div>
 
-              <!-- Remote Pane -->
-              <div class="col-6 h-100">
-                <div class="card h-100 border-secondary">
-                  <div class="card-header py-2 font-weight-bold small bg-dark d-flex justify-content-between align-items-center">
-                    <span>📁 Remote: {{ remoteCurrentPath }}</span>
+              <!-- Dual-Pane View -->
+              <div class="sftp-dual-pane-row">
+                <!-- Local Pane -->
+                <div class="sftp-pane-card">
+                  <div class="sftp-pane-header">
+                    <span class="text-truncate mr-2">Local: <code>{{ localCurrentPath }}</code></span>
+                    <button class="btn btn-xs btn-outline-secondary py-0" (click)="refreshLocal()">Refresh</button>
+                  </div>
+                  <div class="sftp-pane-body">
+                    <div class="text-muted small">Local filesystem view ready</div>
+                  </div>
+                </div>
+
+                <!-- Remote Pane -->
+                <div class="sftp-pane-card">
+                  <div class="sftp-pane-header">
+                    <span class="text-truncate mr-2">Remote: <code>{{ remoteCurrentPath }}</code></span>
                     <div>
                       <button
                         *ngIf="clipboard.hasItem()"
                         class="btn btn-xs btn-info py-0 mr-1"
                         (click)="pasteFromOtherConnection()"
                       >
-                        Remote Paste
+                        Paste
                       </button>
                       <button class="btn btn-xs btn-outline-secondary py-0" (click)="refreshRemote()">Refresh</button>
                     </div>
                   </div>
-                  <div class="card-body p-2" style="overflow-y: auto;">
+                  <div class="sftp-pane-body">
                     <div class="text-muted small">Remote SFTP session ready</div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
+
+          <!-- Bottom Dock: Transfer Queue -->
+          <workbench-bottom-dock
+            [store]="transferStore"
+            [height]="dockHeight"
+          ></workbench-bottom-dock>
         </div>
       </div>
-
-      <!-- Bottom Dock: Transfer Queue -->
-      <workbench-bottom-dock
-        [store]="transferStore"
-        [height]="dockHeight"
-      ></workbench-bottom-dock>
     </div>
   `,
   styles: [
@@ -149,6 +156,113 @@ import { CrossTransferRelayService } from '../cross-transfer/cross-transfer-rela
         display: block;
         width: 100%;
         height: 100%;
+        overflow: hidden;
+        background: #1e2227;
+        color: #abb2bf;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      }
+      .workbench-shell {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+      .workbench-main {
+        flex: 1;
+        display: flex;
+        flex-direction: row;
+        width: 100%;
+        min-height: 0;
+        overflow: hidden;
+      }
+      .workbench-content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+        height: 100%;
+        overflow: hidden;
+        position: relative;
+      }
+      .workbench-workspace {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        min-width: 0;
+        width: 100%;
+        height: 100%;
+        position: relative;
+        overflow: hidden;
+      }
+      .terminal-pane {
+        flex: 1;
+        width: 100%;
+        height: 100%;
+        position: relative;
+        overflow: hidden;
+        background: #1e2227;
+      }
+      .no-session-placeholder {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        width: 100%;
+        text-align: center;
+      }
+      .sftp-pane {
+        flex: 1;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        padding: 12px;
+        box-sizing: border-box;
+      }
+      .sftp-top-bar {
+        flex-shrink: 0;
+      }
+      .sftp-dual-pane-row {
+        flex: 1;
+        display: flex;
+        gap: 12px;
+        min-height: 0;
+        width: 100%;
+      }
+      .sftp-pane-card {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        height: 100%;
+        background: #21252b;
+        border: 1px solid #3e4451;
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      .sftp-pane-header {
+        height: 36px;
+        min-height: 36px;
+        background: #282c34;
+        border-bottom: 1px solid #3e4451;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 10px;
+        font-size: 12px;
+        font-weight: 600;
+        color: #d7dae0;
+      }
+      .sftp-pane-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 12px;
+        min-height: 0;
       }
     `,
   ],
