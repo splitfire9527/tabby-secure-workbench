@@ -10,5 +10,7 @@ module.exports = {
   },
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
+    '^tabby-core$': '<rootDir>/tests/__mocks__/tabby-core.ts',
+    '^tabby-terminal$': '<rootDir>/tests/__mocks__/tabby-terminal.ts',
   },
 }

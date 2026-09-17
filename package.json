@@ -27,6 +27,7 @@
   },
   "devDependencies": {
     "@angular/animations": "^9.1.13",
+    "@angular/cdk": "^9.2.4",
     "@angular/common": "^9.1.13",
     "@angular/core": "^9.1.13",
     "@angular/forms": "^9.1.13",
