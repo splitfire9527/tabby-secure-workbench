@@ -160,13 +160,14 @@ export class WorkbenchShellComponent extends BaseTabComponent implements OnInit,
   private subs: Subscription[] = []
 
   constructor(
+    injector: Injector,
     private app: AppService,
     private config: ConfigService,
     private hotkeys: HotkeysService,
     public clipboard: CrossTransferClipboard,
     private relayService: CrossTransferRelayService
   ) {
-    super()
+    super(...([injector] as unknown as []))
   }
 
   ngOnInit(): void {
