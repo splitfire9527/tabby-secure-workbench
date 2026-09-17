@@ -1,57 +1,185 @@
-import { Component, Input, Output, EventEmitter } from '@angular/core'
-import { ConfigService, NotificationsService } from 'tabby-core'
+import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, Optional } from '@angular/core'
+import { ConfigService, NotificationsService, ProfilesService } from 'tabby-core'
+import { Subscription } from 'rxjs'
 import { ActivityTab } from './workbench-activity-bar.component'
 import { DirectoryPair } from '../sftp-plus/directory-pair.model'
 import { DEFAULT_WORKBENCH_CONFIG } from '../config/config.model'
 
+interface ProfileFolderGroup {
+  name: string
+  profiles: any[]
+  expanded: boolean
+}
+
 @Component({
   selector: 'workbench-drawer',
   template: `
-    <!-- Header -->
+    <!-- Drawer Title Header -->
     <div class="drawer-header">
-      <h6 class="drawer-title">{{ title }}</h6>
+      <div class="d-flex align-items-center">
+        <span class="drawer-title">{{ title }}</span>
+      </div>
       <button class="btn-close-drawer" (click)="closeDrawer.emit()" title="Hide Drawer">
         &times;
       </button>
     </div>
 
-    <!-- Commands Drawer -->
-    <div *ngIf="activeTab === 'commands'" class="drawer-panel">
-      <workbench-command-library [activeTerminalTab]="activeTerminalTab"></workbench-command-library>
-    </div>
+    <!-- 1. Sessions Drawer (SecureCRT Session Manager) -->
+    <div *ngIf="activeTab === 'sessions'" class="drawer-panel">
+      <!-- Session Manager Action Toolbar -->
+      <div class="session-mgr-toolbar">
+        <button
+          class="btn-mgr-tool"
+          [disabled]="!selectedProfile"
+          (click)="connectSelected()"
+          title="Connect Selected Session"
+        >
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+          </svg>
+          <span>Connect</span>
+        </button>
+        <button class="btn-mgr-tool" (click)="createNewSession()" title="New Session Profile">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          <span>New</span>
+        </button>
+        <button class="btn-mgr-tool" (click)="toggleFolderGroupExpand()" title="Expand/Collapse All Folders">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+          </svg>
+        </button>
+        <button class="btn-mgr-tool" (click)="loadProfiles()" title="Refresh Sessions List">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <polyline points="1 20 1 14 7 14"></polyline>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+        </button>
+      </div>
 
-    <!-- Sessions Drawer -->
-    <div *ngIf="activeTab === 'sessions'" class="drawer-panel scrollable">
-      <div class="search-box mb-2">
+      <!-- Filter Box -->
+      <div class="search-box">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#7f848e" stroke-width="2" class="search-icon">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
         <input
           type="text"
-          class="form-control form-control-sm"
-          placeholder="Search sessions (Alt+C)..."
+          class="search-input"
+          placeholder="Filter by folder/session name..."
           [(ngModel)]="sessionFilter"
         />
+        <button *ngIf="sessionFilter" class="btn-clear-search" (click)="sessionFilter = ''">&times;</button>
       </div>
-      <div class="session-list">
+
+      <!-- Session Tree -->
+      <div class="session-tree scrollable">
+        <!-- Root Folder: Sessions -->
+        <div class="tree-node tree-folder-root" (click)="rootExpanded = !rootExpanded">
+          <span class="tree-arrow" [class.open]="rootExpanded">&#9656;</span>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="#e5c07b" stroke="none" class="mr-1">
+            <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+          </svg>
+          <span class="tree-label font-weight-bold">Sessions</span>
+          <span class="badge badge-secondary badge-xs ml-auto">{{ totalProfilesCount }}</span>
+        </div>
+
+        <div *ngIf="rootExpanded" class="tree-children">
+          <!-- Folder Groups -->
+          <div *ngFor="let group of filteredGroups" class="tree-group-container">
+            <div class="tree-node tree-folder" (click)="group.expanded = !group.expanded">
+              <span class="tree-arrow" [class.open]="group.expanded">&#9656;</span>
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="#e5c07b" stroke="none" class="mr-1">
+                <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+              </svg>
+              <span class="tree-label">{{ group.name }}</span>
+              <span class="badge badge-secondary badge-xs ml-auto">{{ group.profiles.length }}</span>
+            </div>
+
+            <div *ngIf="group.expanded" class="tree-group-children">
+              <div
+                *ngFor="let p of group.profiles"
+                class="tree-node tree-leaf"
+                [class.selected]="selectedProfile?.id === p.id"
+                [class.active]="isProfileActive(p)"
+                (click)="onSelectProfile(p)"
+                (dblclick)="onConnectProfile(p)"
+                [title]="getProfileTooltip(p)"
+              >
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" class="tree-icon leaf-icon">
+                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                  <line x1="8" y1="21" x2="16" y2="21"></line>
+                  <line x1="12" y1="17" x2="12" y2="21"></line>
+                </svg>
+                <span class="tree-label text-truncate">{{ p.name }}</span>
+                <span *ngIf="isProfileActive(p)" class="status-dot online ml-auto"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Ungrouped Profiles -->
+          <div
+            *ngFor="let p of filteredUngroupedProfiles"
+            class="tree-node tree-leaf"
+            [class.selected]="selectedProfile?.id === p.id"
+            [class.active]="isProfileActive(p)"
+            (click)="onSelectProfile(p)"
+            (dblclick)="onConnectProfile(p)"
+            [title]="getProfileTooltip(p)"
+          >
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" class="tree-icon leaf-icon">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+            <span class="tree-label text-truncate">{{ p.name }}</span>
+            <span *ngIf="isProfileActive(p)" class="status-dot online ml-auto"></span>
+          </div>
+
+          <div *ngIf="totalProfilesCount === 0" class="text-muted small text-center p-3">
+            No saved profiles found. Click "New" to create one.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Active Sessions Drawer -->
+    <div *ngIf="activeTab === 'active-sessions'" class="drawer-panel scrollable">
+      <div class="active-session-list">
         <div
-          *ngFor="let s of filteredSessions"
-          class="session-item p-2 mb-1 rounded d-flex justify-content-between align-items-center"
+          *ngFor="let s of availableSessions"
+          class="active-session-item p-2 mb-1 rounded d-flex justify-content-between align-items-center"
           (click)="selectSession.emit(s)"
           [class.active]="s === activeTerminalTab"
         >
           <div class="text-truncate mr-2">
-            <div class="font-weight-bold small text-truncate text-light">{{ s.title || s.name || 'SSH Session' }}</div>
+            <div class="font-weight-bold small text-truncate text-light">{{ s.title || s.name || 'Terminal Session' }}</div>
             <div class="text-muted small" style="font-size: 11px;">
-              {{ s.profile?.options?.user || 'user' }}@{{ s.profile?.options?.host || 'localhost' }}
+              {{ s.profile?.options?.user || 'user' }}&#64;{{ s.profile?.options?.host || 'localhost' }}
             </div>
           </div>
-          <span class="badge badge-success badge-sm">&#x25cf;</span>
+          <span
+            class="status-dot"
+            [class.online]="s.session?.open !== false"
+            [class.offline]="s.session?.open === false"
+          ></span>
         </div>
-        <div *ngIf="filteredSessions.length === 0" class="text-muted small text-center p-3">
-          No active SSH sessions found.
+        <div *ngIf="availableSessions.length === 0" class="text-muted small text-center p-3">
+          No active terminal sessions open.
         </div>
       </div>
     </div>
 
-    <!-- Directory Pairs Drawer -->
+    <!-- 3. Commands Drawer (Command Manager) -->
+    <div *ngIf="activeTab === 'commands'" class="drawer-panel">
+      <workbench-command-library [activeTerminalTab]="activeTerminalTab"></workbench-command-library>
+    </div>
+
+    <!-- 4. Directory Pairs Drawer -->
     <div *ngIf="activeTab === 'pairs'" class="drawer-panel scrollable">
       <div class="d-flex justify-content-between align-items-center mb-2">
         <span class="small text-muted">{{ directoryPairs.length }} pair(s)</span>
@@ -81,15 +209,15 @@ import { DEFAULT_WORKBENCH_CONFIG } from '../config/config.model'
         <h6 class="small font-weight-bold mb-2">Add Directory Pair</h6>
         <div class="form-group mb-2">
           <label class="small">Title</label>
-          <input type="text" class="form-control form-control-sm bg-secondary text-white border-dark" [(ngModel)]="newPair.title" />
+          <input type="text" class="form-control form-control-sm search-input" [(ngModel)]="newPair.title" />
         </div>
         <div class="form-group mb-2">
           <label class="small">Local Path</label>
-          <input type="text" class="form-control form-control-sm bg-secondary text-white border-dark" [(ngModel)]="newPair.localPath" />
+          <input type="text" class="form-control form-control-sm search-input" [(ngModel)]="newPair.localPath" />
         </div>
         <div class="form-group mb-2">
           <label class="small">Remote Path</label>
-          <input type="text" class="form-control form-control-sm bg-secondary text-white border-dark" [(ngModel)]="newPair.remotePath" />
+          <input type="text" class="form-control form-control-sm search-input" [(ngModel)]="newPair.remotePath" />
         </div>
         <div class="d-flex justify-content-end">
           <button class="btn btn-xs btn-secondary mr-2" (click)="showNewPairModal = false">Cancel</button>
@@ -98,7 +226,7 @@ import { DEFAULT_WORKBENCH_CONFIG } from '../config/config.model'
       </div>
     </div>
 
-    <!-- Settings Drawer -->
+    <!-- 5. Settings Drawer -->
     <div *ngIf="activeTab === 'settings'" class="drawer-panel scrollable">
       <div class="form-group mb-3">
         <label class="small font-weight-bold text-light">Hide Native SFTP Button</label>
@@ -120,21 +248,20 @@ import { DEFAULT_WORKBENCH_CONFIG } from '../config/config.model'
         <label class="small font-weight-bold text-light">Transfer Dock Height (px)</label>
         <input
           type="number"
-          class="form-control form-control-sm bg-secondary text-white border-dark"
+          class="form-control form-control-sm search-input"
           [(ngModel)]="dockHeight"
           (change)="updateSettings()"
         />
       </div>
     </div>
 
-    <!-- About Drawer -->
+    <!-- 6. About Drawer -->
     <div *ngIf="activeTab === 'about'" class="drawer-panel scrollable small text-muted">
       <h6 class="text-white font-weight-bold mb-2">Tabby Secure Workbench</h6>
       <p class="mb-1">Version: 1.0.0</p>
       <p class="mb-2">License: MIT</p>
       <p class="mb-3">
-        A pure Tabby plugin providing a unified SSH workbench, stateful multi-byte codec,
-        per-tab transfer queues, verified session transcripts, and cross-connection copy/paste.
+        A professional SSH workbench plugin for Tabby inspired by SecureCRT, featuring Session Manager tree, Command Manager, Stateful Codec, per-tab transfer queues, verified session logging, and cross-connection transfer.
       </p>
       <div class="border-top border-secondary pt-2">
         <p class="mb-1 text-white font-weight-bold">Components & Attribution:</p>
@@ -150,13 +277,13 @@ import { DEFAULT_WORKBENCH_CONFIG } from '../config/config.model'
       :host {
         display: flex;
         flex-direction: column;
-        width: 320px;
-        min-width: 320px;
-        max-width: 320px;
+        width: 300px;
+        min-width: 300px;
+        max-width: 300px;
         height: 100%;
         background: #21252b;
         border-right: 1px solid #3e4451;
-        padding: 12px;
+        padding: 8px 10px;
         box-sizing: border-box;
         flex-shrink: 0;
         overflow: hidden;
@@ -166,8 +293,9 @@ import { DEFAULT_WORKBENCH_CONFIG } from '../config/config.model'
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 12px;
+        margin-bottom: 8px;
         flex-shrink: 0;
+        height: 24px;
       }
       .drawer-title {
         font-weight: 700;
@@ -189,6 +317,78 @@ import { DEFAULT_WORKBENCH_CONFIG } from '../config/config.model'
       .btn-close-drawer:hover {
         color: #fff;
       }
+      .session-mgr-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        margin-bottom: 8px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid rgba(62, 68, 81, 0.6);
+        flex-shrink: 0;
+      }
+      .btn-mgr-tool {
+        background: #282c34;
+        border: 1px solid #3e4451;
+        border-radius: 4px;
+        color: #abb2bf;
+        font-size: 11px;
+        padding: 3px 7px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+      .btn-mgr-tool:hover:not([disabled]) {
+        background: #3a3f4b;
+        color: #fff;
+        border-color: #61afef;
+      }
+      .btn-mgr-tool[disabled] {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .search-box {
+        position: relative;
+        display: flex;
+        align-items: center;
+        margin-bottom: 8px;
+        flex-shrink: 0;
+      }
+      .search-icon {
+        position: absolute;
+        left: 8px;
+        pointer-events: none;
+      }
+      .search-input {
+        width: 100%;
+        background: #1e2227 !important;
+        border: 1px solid #3e4451 !important;
+        color: #abb2bf !important;
+        border-radius: 4px;
+        padding: 4px 24px 4px 26px;
+        font-size: 12px;
+        outline: none;
+        box-sizing: border-box;
+      }
+      .search-input:focus {
+        border-color: #61afef !important;
+        box-shadow: 0 0 0 1px rgba(97, 175, 239, 0.4);
+      }
+      .search-input::placeholder {
+        color: #5c6370;
+        font-size: 11px;
+      }
+      .btn-clear-search {
+        position: absolute;
+        right: 6px;
+        background: none;
+        border: none;
+        color: #7f848e;
+        font-size: 14px;
+        cursor: pointer;
+        padding: 0;
+      }
       .drawer-panel {
         flex: 1;
         display: flex;
@@ -199,35 +399,121 @@ import { DEFAULT_WORKBENCH_CONFIG } from '../config/config.model'
       .drawer-panel.scrollable {
         overflow-y: auto;
       }
-      .session-item,
+      .session-tree {
+        flex: 1;
+        overflow-y: auto;
+        min-height: 0;
+      }
+      .tree-node {
+        display: flex;
+        align-items: center;
+        height: 26px;
+        padding: 0 6px;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 12px;
+        color: #abb2bf;
+        transition: background 0.1s ease;
+      }
+      .tree-node:hover {
+        background: rgba(255, 255, 255, 0.06);
+        color: #fff;
+      }
+      .tree-node.selected {
+        background: rgba(97, 175, 239, 0.2);
+        color: #fff;
+        border: 1px solid rgba(97, 175, 239, 0.4);
+      }
+      .tree-node.active {
+        /* SecureCRT red highlight for active connected session */
+        background: #be5046 !important;
+        color: #ffffff !important;
+        font-weight: 600;
+      }
+      .tree-arrow {
+        width: 14px;
+        display: inline-block;
+        font-size: 10px;
+        color: #7f848e;
+        transition: transform 0.15s ease;
+      }
+      .tree-arrow.open {
+        transform: rotate(90deg);
+      }
+      .tree-children {
+        padding-left: 12px;
+      }
+      .tree-group-children {
+        padding-left: 14px;
+      }
+      .leaf-icon {
+        margin-right: 6px;
+        flex-shrink: 0;
+        color: #61afef;
+      }
+      .tree-node.active .leaf-icon {
+        color: #fff !important;
+      }
+      .tree-label {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .badge-xs {
+        font-size: 9px;
+        padding: 1px 4px;
+        border-radius: 8px;
+        background: #3e4451;
+        color: #abb2bf;
+      }
+      .status-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        display: inline-block;
+        flex-shrink: 0;
+      }
+      .status-dot.online {
+        background: #98c379;
+        box-shadow: 0 0 6px rgba(152, 195, 121, 0.6);
+      }
+      .status-dot.offline {
+        background: #e06c75;
+      }
+      .active-session-item,
       .pair-item {
-        background: rgba(255, 255, 255, 0.04);
+        background: rgba(255, 255, 255, 0.03);
         border: 1px solid rgba(255, 255, 255, 0.06);
         cursor: pointer;
         transition: background 0.15s ease;
       }
-      .session-item:hover,
+      .active-session-item:hover,
       .pair-item:hover {
-        background: rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.07);
       }
-      .session-item.active {
+      .active-session-item.active {
         border-color: #61afef;
-        background: rgba(97, 175, 239, 0.12);
+        background: rgba(97, 175, 239, 0.14);
       }
     `,
   ],
 })
-export class WorkbenchDrawerComponent {
-  @Input() activeTab: ActivityTab = 'commands'
+export class WorkbenchDrawerComponent implements OnInit, OnDestroy {
+  @Input() activeTab: ActivityTab = 'sessions'
   @Input() activeTerminalTab: any
+  @Input() activeProfile: any
   @Input() availableSessions: any[] = []
   @Output() closeDrawer = new EventEmitter<void>()
   @Output() selectSession = new EventEmitter<any>()
+  @Output() connectProfile = new EventEmitter<any>()
   @Output() applyDirectoryPair = new EventEmitter<DirectoryPair>()
 
   sessionFilter = ''
-  showNewPairModal = false
+  rootExpanded = true
+  selectedProfile: any = null
+  savedProfiles: any[] = []
 
+  showNewPairModal = false
   newPair: DirectoryPair = {
     id: '',
     title: '',
@@ -235,21 +521,41 @@ export class WorkbenchDrawerComponent {
     remotePath: '',
   }
 
+  private subs: Subscription[] = []
+
   constructor(
     private config: ConfigService,
-    private notifications: NotificationsService
+    private notifications: NotificationsService,
+    @Optional() private profilesService?: ProfilesService
   ) {}
+
+  ngOnInit(): void {
+    this.loadProfiles()
+    if (this.config.changed$) {
+      this.subs.push(
+        this.config.changed$.subscribe(() => {
+          this.loadProfiles()
+        })
+      )
+    }
+  }
+
+  ngOnDestroy(): void {
+    this.subs.forEach(s => s.unsubscribe())
+  }
 
   get title(): string {
     switch (this.activeTab) {
       case 'sessions':
-        return 'Sessions'
+        return 'Session Manager'
       case 'commands':
-        return 'Command Library'
+        return 'Command Manager'
+      case 'active-sessions':
+        return 'Active Sessions'
       case 'pairs':
         return 'Directory Pairs'
       case 'settings':
-        return 'Workbench Settings'
+        return 'Settings'
       case 'about':
         return 'About'
       default:
@@ -257,14 +563,122 @@ export class WorkbenchDrawerComponent {
     }
   }
 
-  get filteredSessions(): any[] {
+  async loadProfiles(): Promise<void> {
+    if (this.profilesService) {
+      try {
+        const profiles = await this.profilesService.getProfiles()
+        // Filter out workbench profile itself so it doesn't nest into itself
+        this.savedProfiles = (profiles || []).filter((p: any) => p.type !== 'workbench')
+      } catch (err) {
+        console.warn('[Workbench] Error loading profiles', err)
+      }
+    } else if (this.config.store?.profiles) {
+      this.savedProfiles = (this.config.store.profiles || []).filter((p: any) => p.type !== 'workbench')
+    }
+  }
+
+  get totalProfilesCount(): number {
+    return this.savedProfiles.length
+  }
+
+  get filteredGroups(): ProfileFolderGroup[] {
     const q = this.sessionFilter.toLowerCase().trim()
-    if (!q) return this.availableSessions
-    return this.availableSessions.filter(
-      s =>
-        (s.title || '').toLowerCase().includes(q) ||
-        (s.profile?.options?.host || '').toLowerCase().includes(q)
+    const groupMap = new Map<string, any[]>()
+
+    for (const p of this.savedProfiles) {
+      if (p.group) {
+        if (!groupMap.has(p.group)) groupMap.set(p.group, [])
+        groupMap.get(p.group)!.push(p)
+      }
+    }
+
+    const groups: ProfileFolderGroup[] = []
+    for (const [name, profiles] of groupMap.entries()) {
+      const filtered = q
+        ? profiles.filter(
+            p =>
+              (p.name || '').toLowerCase().includes(q) ||
+              (p.options?.host || '').toLowerCase().includes(q) ||
+              name.toLowerCase().includes(q)
+          )
+        : profiles
+
+      if (filtered.length > 0) {
+        groups.push({
+          name,
+          profiles: filtered,
+          expanded: true,
+        })
+      }
+    }
+
+    return groups
+  }
+
+  get filteredUngroupedProfiles(): any[] {
+    const q = this.sessionFilter.toLowerCase().trim()
+    const ungrouped = this.savedProfiles.filter(p => !p.group)
+    if (!q) return ungrouped
+    return ungrouped.filter(
+      p =>
+        (p.name || '').toLowerCase().includes(q) ||
+        (p.options?.host || '').toLowerCase().includes(q) ||
+        (p.options?.user || '').toLowerCase().includes(q)
     )
+  }
+
+  onSelectProfile(p: any): void {
+    this.selectedProfile = p
+  }
+
+  onConnectProfile(p: any): void {
+    this.selectedProfile = p
+    this.connectProfile.emit(p)
+  }
+
+  connectSelected(): void {
+    if (this.selectedProfile) {
+      this.connectProfile.emit(this.selectedProfile)
+    }
+  }
+
+  async createNewSession(): Promise<void> {
+    if (this.profilesService) {
+      try {
+        const p = await this.profilesService.showProfileSelector()
+        if (p) {
+          this.loadProfiles()
+          this.onConnectProfile(p)
+        }
+      } catch (err) {
+        console.warn('[Workbench] Error showing profile selector', err)
+      }
+    }
+  }
+
+  toggleFolderGroupExpand(): void {
+    this.rootExpanded = !this.rootExpanded
+  }
+
+  isProfileActive(profile: any): boolean {
+    if (!profile) return false
+    if (this.activeProfile && this.activeProfile.id === profile.id) return true
+    if (
+      this.activeTerminalTab?.profile &&
+      (this.activeTerminalTab.profile.id === profile.id ||
+        (this.activeTerminalTab.profile.options?.host &&
+          this.activeTerminalTab.profile.options?.host === profile.options?.host))
+    ) {
+      return true
+    }
+    return false
+  }
+
+  getProfileTooltip(p: any): string {
+    const user = p.options?.user || 'user'
+    const host = p.options?.host || 'localhost'
+    const port = p.options?.port || 22
+    return `${p.name} (${user}@${host}:${port})`
   }
 
   get directoryPairs(): DirectoryPair[] {

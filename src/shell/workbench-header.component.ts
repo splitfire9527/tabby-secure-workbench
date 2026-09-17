@@ -85,6 +85,7 @@ import { Component, Input, Output, EventEmitter } from '@angular/core'
 })
 export class WorkbenchHeaderComponent {
   @Input() activeTerminalTab: any
+  @Input() activeProfile: any
   @Input() viewMode: 'pty' | 'sftp' = 'pty'
   @Output() viewModeChange = new EventEmitter<'pty' | 'sftp'>()
   @Output() quickConnect = new EventEmitter<{ host: string; user: string; port: number }>()
@@ -94,6 +95,7 @@ export class WorkbenchHeaderComponent {
       this.activeTerminalTab?.title ||
       this.activeTerminalTab?.customTitle ||
       this.activeTerminalTab?.profile?.name ||
+      this.activeProfile?.name ||
       'Workbench'
     )
   }
@@ -102,16 +104,26 @@ export class WorkbenchHeaderComponent {
     return (
       this.activeTerminalTab?.profile?.options?.user ||
       this.activeTerminalTab?.profile?.options?.username ||
+      this.activeProfile?.options?.user ||
+      this.activeProfile?.options?.username ||
       'user'
     )
   }
 
   get host(): string {
-    return this.activeTerminalTab?.profile?.options?.host || 'localhost'
+    return (
+      this.activeTerminalTab?.profile?.options?.host ||
+      this.activeProfile?.options?.host ||
+      'localhost'
+    )
   }
 
   get port(): number {
-    return this.activeTerminalTab?.profile?.options?.port || 22
+    return (
+      this.activeTerminalTab?.profile?.options?.port ||
+      this.activeProfile?.options?.port ||
+      22
+    )
   }
 
   get connectionState(): 'Connected' | 'Disconnected' | 'Connecting' {
@@ -120,7 +132,10 @@ export class WorkbenchHeaderComponent {
       this.activeTerminalTab?._session ||
       this.activeTerminalTab?.sshSession
 
-    if (!session) return 'Disconnected'
+    if (!session) {
+      if (this.activeProfile) return 'Connecting'
+      return 'Disconnected'
+    }
     if (session.open === true) return 'Connected'
     if (session.open === false) return 'Disconnected'
     return 'Connecting'

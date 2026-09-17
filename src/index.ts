@@ -47,7 +47,8 @@ import { WorkbenchHotkeyProvider } from './shell/workbench-hotkey.provider'
 import {
   WorkbenchSettingsTabComponent,
   WorkbenchSettingsTabProvider,
-} from './shell/workbench-settings-tab.provider'
+  WorkbenchTerminalDecorator,
+} from './shell'
 
 /**
  * Service to manage optional CSS injection for hiding Tabby's native SFTP button
@@ -111,6 +112,7 @@ export class NativeSftpHideService {
     { provide: ProfileProvider, useClass: WorkbenchProfileProvider, multi: true },
     { provide: TabRecoveryProvider, useClass: WorkbenchTabRecoveryProvider as any, multi: true },
     { provide: TerminalDecorator, useClass: CodecTerminalDecorator, multi: true },
+    { provide: TerminalDecorator, useClass: WorkbenchTerminalDecorator, multi: true },
     { provide: HotkeyProvider, useClass: WorkbenchHotkeyProvider, multi: true },
     { provide: SettingsTabProvider, useClass: WorkbenchSettingsTabProvider, multi: true },
     { provide: TerminalColorSchemeProvider, useClass: SecureCrtColorSchemeProvider, multi: true },

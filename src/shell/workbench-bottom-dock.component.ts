@@ -1,4 +1,4 @@
-import { Component, Input, OnInit, OnDestroy, HostBinding } from '@angular/core'
+import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, HostBinding } from '@angular/core'
 import { Subscription } from 'rxjs'
 import { TransferStore } from '../transfer-store/transfer-store'
 import { TransferTask, TransferSummary } from '../transfer-store/transfer.model'
@@ -159,8 +159,9 @@ export class WorkbenchBottomDockComponent implements OnInit, OnDestroy {
   @Input() store!: TransferStore
   @Input() height = 140
   @Input() autoExpand = true
+  @Input() isExpanded = false
+  @Output() isExpandedChange = new EventEmitter<boolean>()
 
-  isExpanded = false
   tasks: TransferTask[] = []
   summary: TransferSummary = {
     queued: 0,
@@ -192,6 +193,7 @@ export class WorkbenchBottomDockComponent implements OnInit, OnDestroy {
         this.summary = summary
         if (this.autoExpand && summary.running > 0 && !this.isExpanded) {
           this.isExpanded = true
+          this.isExpandedChange.emit(true)
         }
       })
     )
@@ -201,9 +203,10 @@ export class WorkbenchBottomDockComponent implements OnInit, OnDestroy {
     this.subs.forEach(s => s.unsubscribe())
   }
 
-  toggleExpanded(event: MouseEvent): void {
-    event.stopPropagation()
+  toggleExpanded(event?: MouseEvent): void {
+    if (event) event.stopPropagation()
     this.isExpanded = !this.isExpanded
+    this.isExpandedChange.emit(this.isExpanded)
   }
 
   cancelTask(id: string): void {

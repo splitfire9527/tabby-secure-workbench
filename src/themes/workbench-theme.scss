@@ -165,6 +165,49 @@ workbench-shell,
       display: flex !important;
       flex-direction: column !important;
     }
+
+    .workbench-status-bar {
+      height: 22px !important;
+      min-height: 22px !important;
+      max-height: 22px !important;
+      background: $workbench-bg-dark !important;
+      border-top: 1px solid $workbench-border !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      padding: 0 10px !important;
+      font-size: 11px !important;
+      color: $workbench-text-main !important;
+      flex-shrink: 0 !important;
+      box-sizing: border-box !important;
+      user-select: none !important;
+
+      .status-ready-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: $workbench-accent-green;
+        display: inline-block;
+      }
+
+      .status-ready-text {
+        color: $workbench-accent-green;
+        font-weight: 500;
+      }
+
+      .status-item {
+        color: $workbench-text-main;
+        border-left: 1px solid rgba(62, 68, 81, 0.6);
+        padding-left: 10px;
+      }
+
+      .transfer-pill {
+        cursor: pointer;
+        &:hover {
+          color: #fff;
+        }
+      }
+    }
   }
 }
 

@@ -1,6 +1,6 @@
 import { Component, Input, Output, EventEmitter } from '@angular/core'
 
-export type ActivityTab = 'sessions' | 'commands' | 'pairs' | 'settings' | 'about'
+export type ActivityTab = 'sessions' | 'commands' | 'active-sessions' | 'pairs' | 'settings' | 'about'
 
 @Component({
   selector: 'workbench-activity-bar',
@@ -9,7 +9,7 @@ export type ActivityTab = 'sessions' | 'commands' | 'pairs' | 'settings' | 'abou
       class="activity-item"
       [class.active]="activeTab === 'sessions'"
       (click)="selectTab('sessions')"
-      title="Sessions (Alt+C)"
+      title="Session Manager (Alt+C)"
     >
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
@@ -22,11 +22,22 @@ export type ActivityTab = 'sessions' | 'commands' | 'pairs' | 'settings' | 'abou
       class="activity-item"
       [class.active]="activeTab === 'commands'"
       (click)="selectTab('commands')"
-      title="Command Library"
+      title="Command Manager"
     >
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="4 17 10 11 4 5"></polyline>
         <line x1="12" y1="19" x2="20" y2="19"></line>
+      </svg>
+    </div>
+
+    <div
+      class="activity-item"
+      [class.active]="activeTab === 'active-sessions'"
+      (click)="selectTab('active-sessions')"
+      title="Active Sessions"
+    >
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
       </svg>
     </div>
 
