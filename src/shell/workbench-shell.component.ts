@@ -1,5 +1,20 @@
-import { Component, Injector, OnInit, OnDestroy, ViewChild, ElementRef } from '@angular/core'
-import { BaseTabComponent, AppService, ConfigService, HotkeysService } from 'tabby-core'
+import {
+  Component,
+  Injector,
+  OnInit,
+  OnDestroy,
+  AfterViewInit,
+  ViewChild,
+  ViewContainerRef,
+  Optional,
+} from '@angular/core'
+import {
+  BaseTabComponent,
+  AppService,
+  ConfigService,
+  HotkeysService,
+  ProfilesService,
+} from 'tabby-core'
 import { Subscription } from 'rxjs'
 import { TransferStore } from '../transfer-store/transfer-store'
 import { ActivityTab } from './workbench-activity-bar.component'
@@ -44,9 +59,9 @@ import { CrossTransferRelayService } from '../cross-transfer/cross-transfer-rela
           <div
             class="terminal-pane"
             [style.display]="viewMode === 'pty' ? 'block' : 'none'"
-            #terminalContainer
+            style="width: 100%; height: 100%; position: relative;"
           >
-            <!-- Embedded Tabby Terminal Tab goes here -->
+            <ng-container #terminalHost></ng-container>
             <div *ngIf="!embeddedTerminalTab" class="d-flex align-items-center justify-content-center h-100 text-muted">
               <div class="text-center">
                 <h6>No active terminal in this Workbench Tab</h6>
@@ -138,8 +153,8 @@ import { CrossTransferRelayService } from '../cross-transfer/cross-transfer-rela
     `,
   ],
 })
-export class WorkbenchShellComponent extends BaseTabComponent implements OnInit, OnDestroy {
-  @ViewChild('terminalContainer', { static: false }) terminalContainer?: ElementRef
+export class WorkbenchShellComponent extends BaseTabComponent implements OnInit, OnDestroy, AfterViewInit {
+  @ViewChild('terminalHost', { read: ViewContainerRef, static: false }) terminalHost?: ViewContainerRef
 
   override title = 'Workbench'
   viewMode: 'pty' | 'sftp' = 'pty'
@@ -165,13 +180,23 @@ export class WorkbenchShellComponent extends BaseTabComponent implements OnInit,
     private config: ConfigService,
     private hotkeys: HotkeysService,
     public clipboard: CrossTransferClipboard,
-    private relayService: CrossTransferRelayService
+    private relayService: CrossTransferRelayService,
+    @Optional() private profilesService?: ProfilesService
   ) {
     super(...([injector] as unknown as []))
   }
 
   ngOnInit(): void {
     this.collectSessions()
+
+    // Real-time synchronization of open tabs
+    if (this.app.tabsChanged$) {
+      this.subs.push(
+        this.app.tabsChanged$.subscribe(() => {
+          this.collectSessions()
+        })
+      )
+    }
 
     // Global focus hotkey Alt+C
     if (this.hotkeys.hotkey$) {
@@ -186,7 +211,14 @@ export class WorkbenchShellComponent extends BaseTabComponent implements OnInit,
     }
   }
 
+  ngAfterViewInit(): void {
+    if (this.embeddedTerminalTab) {
+      this.attachTerminalTab(this.embeddedTerminalTab)
+    }
+  }
+
   override ngOnDestroy(): void {
+    this.detachTerminalTab(this.embeddedTerminalTab)
     // §4.1 #2: Closing the tab automatically cancels all running/queued tasks and cleans up
     this.transferStore.destroy()
     this.subs.forEach(s => s.unsubscribe())
@@ -211,8 +243,12 @@ export class WorkbenchShellComponent extends BaseTabComponent implements OnInit,
   }
 
   onSelectSession(session: any): void {
+    if (this.embeddedTerminalTab && this.embeddedTerminalTab !== session) {
+      this.detachTerminalTab(this.embeddedTerminalTab)
+    }
     this.embeddedTerminalTab = session
     this.title = session.title || 'Workbench Session'
+    this.attachTerminalTab(session)
   }
 
   onApplyDirectoryPair(pair: DirectoryPair): void {
@@ -221,14 +257,44 @@ export class WorkbenchShellComponent extends BaseTabComponent implements OnInit,
     this.viewMode = 'sftp'
   }
 
-  onQuickConnect(event: { host: string; user: string; port: number }): void {
-    // Create connection
+  async onQuickConnect(event: { host: string; user: string; port: number }): Promise<void> {
     this.title = `${event.user}@${event.host}`
+    if (this.profilesService) {
+      try {
+        const q = `${event.user}@${event.host}:${event.port}`
+        const profile = await this.profilesService.quickConnect(q)
+        if (profile) {
+          const tab = await this.profilesService.openNewTabForProfile(profile)
+          if (tab) {
+            this.onSelectSession(tab)
+          }
+        }
+      } catch (err) {
+        console.warn('[Workbench] Quick connect failed', err)
+      }
+    }
   }
 
-  launchDefaultTerminal(): void {
-    // Mount or request new terminal from Tabby
+  async launchDefaultTerminal(): Promise<void> {
     this.collectSessions()
+    if (this.embeddedTerminalTab) {
+      this.attachTerminalTab(this.embeddedTerminalTab)
+      return
+    }
+
+    if (this.profilesService) {
+      try {
+        const profile = await this.profilesService.showProfileSelector()
+        if (profile) {
+          const tab = await this.profilesService.openNewTabForProfile(profile)
+          if (tab) {
+            this.onSelectSession(tab)
+          }
+        }
+      } catch (err) {
+        console.warn('[Workbench] Could not launch terminal from selector', err)
+      }
+    }
   }
 
   refreshLocal(): void {}
@@ -242,13 +308,46 @@ export class WorkbenchShellComponent extends BaseTabComponent implements OnInit,
     // Source client is pulled from clipboard reference or session
   }
 
+  private attachTerminalTab(tab: any): void {
+    if (!this.terminalHost || !tab) return
+    try {
+      if (typeof tab.removeFromContainer === 'function') {
+        tab.removeFromContainer()
+      }
+      if (typeof tab.insertIntoContainer === 'function') {
+        tab.insertIntoContainer(this.terminalHost)
+        if (typeof tab.emitFocused === 'function') {
+          tab.emitFocused()
+        }
+      }
+    } catch (err) {
+      console.warn('[Workbench] Could not attach tab into container', err)
+    }
+  }
+
+  private detachTerminalTab(tab: any): void {
+    if (tab && typeof tab.removeFromContainer === 'function') {
+      try {
+        tab.removeFromContainer()
+      } catch (err) {
+        console.warn('[Workbench] Error detaching tab', err)
+      }
+    }
+  }
+
   private collectSessions(): void {
     const tabs = this.app.tabs || []
     this.availableSessions = tabs.filter(
       (t: any) => t !== this && (t.session || t._session || t.sshSession)
     )
+
+    if (this.embeddedTerminalTab && !tabs.includes(this.embeddedTerminalTab)) {
+      this.detachTerminalTab(this.embeddedTerminalTab)
+      this.embeddedTerminalTab = null
+    }
+
     if (!this.embeddedTerminalTab && this.availableSessions.length > 0) {
-      this.embeddedTerminalTab = this.availableSessions[0]
+      this.onSelectSession(this.availableSessions[0])
     }
   }
 }

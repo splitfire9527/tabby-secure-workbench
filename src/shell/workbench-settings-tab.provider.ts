@@ -1,4 +1,4 @@
-import { Component } from '@angular/core'
+import { Component, Injectable } from '@angular/core'
 import { SettingsTabProvider } from 'tabby-settings'
 import { ConfigService } from 'tabby-core'
 import { DEFAULT_WORKBENCH_CONFIG, WorkbenchEncoding } from '../config/config.model'
@@ -170,6 +170,7 @@ export class WorkbenchSettingsTabComponent {
   }
 }
 
+@Injectable()
 export class WorkbenchSettingsTabProvider extends SettingsTabProvider {
   id = 'secure-workbench'
   icon = 'shield'
