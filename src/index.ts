@@ -40,6 +40,8 @@ import { WorkbenchToolbarComponent } from './shell/workbench-toolbar.component'
 import { WorkbenchActivityBarComponent } from './shell/workbench-activity-bar.component'
 import { WorkbenchDrawerComponent } from './shell/workbench-drawer.component'
 import { WorkbenchBottomDockComponent } from './shell/workbench-bottom-dock.component'
+import { WorkbenchSidebarComponent } from './shell/workbench-sidebar.component'
+import { WorkbenchHostShellService } from './shell/workbench-host-shell.service'
 import { WorkbenchProfileProvider } from './shell/workbench-profile.provider'
 import { WorkbenchTabRecoveryProvider } from './shell/workbench-tab-recovery.provider'
 import { WorkbenchToolbarButtonProvider } from './shell/workbench-toolbar-button.provider'
@@ -94,6 +96,7 @@ export class NativeSftpHideService {
   imports: [CommonModule, FormsModule, TabbyCoreModule],
   declarations: [
     WorkbenchShellComponent,
+    WorkbenchSidebarComponent,
     WorkbenchHeaderComponent,
     WorkbenchToolbarComponent,
     WorkbenchActivityBarComponent,
@@ -104,6 +107,7 @@ export class NativeSftpHideService {
   ],
   entryComponents: [
     WorkbenchShellComponent,
+    WorkbenchSidebarComponent,
     WorkbenchSettingsTabComponent,
   ],
   providers: [
@@ -123,10 +127,11 @@ export class NativeSftpHideService {
     CrossTransferRelayService,
     CommandService,
     NativeSftpHideService,
+    WorkbenchHostShellService,
   ],
 })
 export default class TabbySecureWorkbenchModule {
-  constructor(hideService: NativeSftpHideService) {
+  constructor(hideService: NativeSftpHideService, hostShell: WorkbenchHostShellService) {
     // Initialized on module startup
   }
 }

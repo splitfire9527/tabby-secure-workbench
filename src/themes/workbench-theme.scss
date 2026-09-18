@@ -222,3 +222,113 @@ workbench-shell,
     opacity: 1;
   }
 }
+
+// Host Application Shell Overrides
+app-root {
+  .window {
+    display: flex !important;
+    flex-direction: row !important;
+    height: 100vh !important;
+    width: 100vw !important;
+    overflow: hidden !important;
+  }
+
+  workbench-sidebar {
+    display: flex !important;
+    flex-direction: row !important;
+    height: 100% !important;
+    flex-shrink: 0 !important;
+    z-index: 20 !important;
+    background: $workbench-bg-panel !important;
+  }
+
+  // Hide native profile tree if present to avoid duplication
+  profile-tree {
+    display: none !important;
+  }
+
+  // Right Workspace (Content)
+  .content.main {
+    flex: 1 1 0 !important;
+    width: auto !important;
+    min-width: 0 !important;
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+
+    // Right Workspace Tab Bar (Only spans the right workspace!)
+    > .tab-bar {
+      background: #1e2227 !important;
+      border-bottom: 1px solid #181a1f !important;
+      height: 38px !important;
+      min-height: 38px !important;
+      max-height: 38px !important;
+      box-sizing: border-box !important;
+
+      .tabs {
+        tab-header {
+          border-right: 1px solid #181a1f !important;
+          background: rgba(33, 37, 43, 0.7) !important;
+          color: $workbench-text-main !important;
+          transition: background 0.15s ease, color 0.15s ease !important;
+
+          &.active {
+            background: $workbench-bg-header !important;
+            color: #ffffff !important;
+            border-top: 2px solid $workbench-accent-red !important;
+          }
+
+          &:hover:not(.active) {
+            background: rgba(40, 44, 52, 0.8) !important;
+            color: #ffffff !important;
+          }
+        }
+      }
+    }
+
+    tab-body {
+      flex: 1 1 auto !important;
+      height: calc(100% - 38px) !important;
+      min-height: 0 !important;
+      display: flex !important;
+      flex-direction: column !important;
+      overflow: hidden !important;
+      background: $workbench-bg-dark !important;
+    }
+  }
+
+  .workbench-decorated-session-bar {
+    height: 32px !important;
+    min-height: 32px !important;
+    background: #21252b !important;
+    border-bottom: 1px solid #181a1f !important;
+    color: $workbench-text-main !important;
+    font-size: 12px !important;
+    user-select: none !important;
+  }
+
+  .workbench-decorated-status-bar {
+    height: 22px !important;
+    min-height: 22px !important;
+    background: #181a1f !important;
+    border-top: 1px solid #282c34 !important;
+    color: $workbench-text-main !important;
+    font-size: 11px !important;
+    user-select: none !important;
+
+    .status-item {
+      color: $workbench-text-main;
+      border-left: 1px solid rgba(62, 68, 81, 0.6);
+      padding-left: 8px;
+    }
+
+    .transfer-pill {
+      cursor: pointer;
+      color: #e5c07b;
+      &:hover {
+        color: #ffffff;
+      }
+    }
+  }
+}
