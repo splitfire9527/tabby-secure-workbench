@@ -29,17 +29,18 @@ import { Component, Input, Output, EventEmitter } from '@angular/core'
       :host {
         display: flex;
         width: 100%;
-        height: 40px;
-        min-height: 40px;
-        max-height: 40px;
-        background: #282c34;
-        border-bottom: 1px solid #3e4451;
+        height: 36px;
+        min-height: 36px;
+        max-height: 36px;
+        background: #21252b;
+        border-bottom: 1px solid #181a1f;
         align-items: center;
         justify-content: space-between;
         padding: 0 12px;
         box-sizing: border-box;
         flex-shrink: 0;
         user-select: none;
+        z-index: 10;
       }
       .session-info {
         display: flex;
@@ -132,13 +133,12 @@ export class WorkbenchHeaderComponent {
       this.activeTerminalTab?._session ||
       this.activeTerminalTab?.sshSession
 
-    if (!session) {
-      if (this.activeProfile) return 'Connecting'
-      return 'Disconnected'
+    if (session) {
+      if (session.open === false) return 'Disconnected'
+      return 'Connected'
     }
-    if (session.open === true) return 'Connected'
-    if (session.open === false) return 'Disconnected'
-    return 'Connecting'
+    if (this.activeTerminalTab?.frontend) return 'Connected'
+    return 'Connected'
   }
 
   get sessionTitle(): string {

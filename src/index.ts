@@ -29,6 +29,9 @@ import { SessionLoggerService } from './session-logging/session-logger.service'
 import { CrossTransferClipboard } from './cross-transfer/cross-transfer-clipboard'
 import { CrossTransferRelayService } from './cross-transfer/cross-transfer-relay.service'
 
+// SFTP+
+import { OverwriteUploader } from './sftp-plus/overwrite-uploader'
+
 // Commands
 import { CommandService } from './command-library/command.service'
 import { CommandLibraryComponent } from './command-library/command-library.component'
@@ -92,6 +95,8 @@ export class NativeSftpHideService {
   }
 }
 
+import { WorkbenchSftpPaneComponent } from './shell/workbench-sftp-pane.component'
+
 @NgModule({
   imports: [CommonModule, FormsModule, TabbyCoreModule],
   declarations: [
@@ -102,12 +107,17 @@ export class NativeSftpHideService {
     WorkbenchActivityBarComponent,
     WorkbenchDrawerComponent,
     WorkbenchBottomDockComponent,
+    WorkbenchSftpPaneComponent,
     CommandLibraryComponent,
     WorkbenchSettingsTabComponent,
   ],
   entryComponents: [
     WorkbenchShellComponent,
     WorkbenchSidebarComponent,
+    WorkbenchHeaderComponent,
+    WorkbenchToolbarComponent,
+    WorkbenchBottomDockComponent,
+    WorkbenchSftpPaneComponent,
     WorkbenchSettingsTabComponent,
   ],
   providers: [
@@ -125,6 +135,7 @@ export class NativeSftpHideService {
     SessionLoggerService,
     CrossTransferClipboard,
     CrossTransferRelayService,
+    OverwriteUploader,
     CommandService,
     NativeSftpHideService,
     WorkbenchHostShellService,

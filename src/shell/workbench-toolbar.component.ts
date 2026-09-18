@@ -12,20 +12,22 @@ import { SessionLoggerService } from '../session-logging/session-logger.service'
       <button
         *ngIf="canReconnect"
         class="btn-toolbar-item"
+        data-action="btn-reconnect"
         (click)="reconnect()"
         title="Reconnect SSH Session"
       >
         <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
         </svg>
-        <span>Reconnect</span>
+        <span>重连</span>
       </button>
 
       <!-- Port Forwarding -->
       <button
         class="btn-toolbar-item"
+        data-action="btn-forwarding"
         (click)="showPortForwardDialog = true"
-        title="Port Forwarding"
+        title="SSH 端口转发规则"
       >
         <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="17 1 21 5 17 9"></polyline>
@@ -33,27 +35,29 @@ import { SessionLoggerService } from '../session-logging/session-logger.service'
           <polyline points="7 23 3 19 7 15"></polyline>
           <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
         </svg>
-        <span>Forwarding</span>
+        <span>转发</span>
       </button>
 
       <!-- Quick Connect -->
       <button
         class="btn-toolbar-item"
+        data-action="btn-quick-connect"
         (click)="showQuickConnectDialog = true"
-        title="Quick Connect"
+        title="快速临时连接"
       >
         <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
         </svg>
-        <span>Quick Connect</span>
+        <span>快连</span>
       </button>
 
       <!-- View Toggle: SFTP+ vs PTY -->
       <button
         class="btn-toolbar-item"
+        data-action="btn-toggle-sftp"
         [class.active]="viewMode === 'sftp'"
         (click)="toggleViewMode()"
-        title="Toggle SFTP+ and Terminal View"
+        title="切换 SFTP+ 双栏传输 / 终端 PTY 视图"
       >
         <svg *ngIf="viewMode !== 'sftp'" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
@@ -62,29 +66,27 @@ import { SessionLoggerService } from '../session-logging/session-logger.service'
           <polyline points="4 17 10 11 4 5"></polyline>
           <line x1="12" y1="19" x2="20" y2="19"></line>
         </svg>
-        <span>{{ viewMode === 'sftp' ? 'Terminal PTY' : 'SFTP+' }}</span>
+        <span>{{ viewMode === 'sftp' ? '终端 PTY' : 'SFTP+ 双栏' }}</span>
       </button>
 
       <!-- Terminal Encoding -->
       <button
         class="btn-toolbar-item"
+        data-action="btn-encoding"
         (click)="showEncodingDialog = true"
-        [title]="'Current Encoding: ' + currentEncoding"
+        [title]="'当前编码: ' + currentEncoding + ' (点击切换)'"
       >
-        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="4 7 4 4 20 4 20 7"></polyline>
-          <line x1="9" y1="20" x2="15" y2="20"></line>
-          <line x1="12" y1="4" x2="12" y2="20"></line>
-        </svg>
+        <span style="color: #e5c07b; font-weight: bold; font-family: monospace;">T</span>
         <span>{{ currentEncoding }}</span>
       </button>
 
       <!-- Session Logging -->
       <button
         class="btn-toolbar-item"
+        data-action="btn-logging"
         [class.active]="isLoggingActive"
         (click)="toggleLogging()"
-        [title]="isLoggingActive ? 'Stop Session Logging' : 'Start Session Logging'"
+        [title]="isLoggingActive ? '点击停止转录审计日志' : '点击开始转录审计日志'"
       >
         <span *ngIf="isLoggingActive" class="recording-dot mr-1"></span>
         <svg *ngIf="!isLoggingActive" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -93,52 +95,55 @@ import { SessionLoggerService } from '../session-logging/session-logger.service'
           <line x1="16" y1="13" x2="8" y2="13"></line>
           <line x1="16" y1="17" x2="8" y2="17"></line>
         </svg>
-        <span>{{ isLoggingActive ? 'Recording' : 'Log' }}</span>
+        <span>{{ isLoggingActive ? '录制中' : 'Log' }}</span>
       </button>
     </div>
 
     <!-- Encoding Switch Dialog -->
-    <div *ngIf="showEncodingDialog" class="modal-dialog-backdrop">
-      <div class="card p-3 shadow" style="width: 320px;">
-        <h6 class="font-weight-bold mb-2">Switch Session Encoding</h6>
-        <p class="small text-muted mb-2">
-          Notice: Any incomplete multi-byte sequence will be flushed as U+FFFD ().
-        </p>
+    <div *ngIf="showEncodingDialog" class="modal-dialog-backdrop" (click)="showEncodingDialog = false">
+      <div class="card p-3 shadow" style="width: 360px;" (click)="$event.stopPropagation()">
+        <h6 class="font-weight-bold mb-2 text-light">切换当前终端会话编码</h6>
+        <div class="alert alert-warning py-1 px-2 mb-2" style="font-size: 11px;">
+          <span>注意：切换必须由用户显式确认。未完成的多字节序列将以 <code>U+FFFD</code> () 写入。控制序列不经转码。</span>
+        </div>
+        <div class="small text-muted mb-2 font-mono">
+          当前编码: <strong class="text-warning">{{ currentEncoding }}</strong>
+        </div>
         <div class="form-group mb-3">
-          <label class="small font-weight-bold">Select Encoding</label>
+          <label class="small font-weight-bold">选择新目标编码</label>
           <select class="form-control form-control-sm" [(ngModel)]="selectedEncoding">
             <option *ngFor="let enc of availableEncodings" [value]="enc">{{ enc }}</option>
           </select>
         </div>
-        <div class="d-flex justify-content-end">
-          <button class="btn btn-sm btn-secondary mr-2" (click)="showEncodingDialog = false">
-            Cancel
+        <div class="d-flex justify-content-end gap-2">
+          <button class="btn btn-sm btn-secondary mr-2" data-action="close-encoding" (click)="showEncodingDialog = false">
+            取消
           </button>
-          <button class="btn btn-sm btn-primary" (click)="applyEncoding()">
-            Apply
+          <button class="btn btn-sm btn-primary" data-action="apply-encoding" (click)="applyEncoding()">
+            确认切换
           </button>
         </div>
       </div>
     </div>
 
     <!-- Port Forwarding Dialog -->
-    <div *ngIf="showPortForwardDialog" class="modal-dialog-backdrop">
-      <div class="card p-3 shadow" style="width: 380px;">
-        <h6 class="font-weight-bold mb-2">SSH Port Forwarding</h6>
-        <p class="small text-warning mb-3">
-          &#x26a0; Changes will take effect upon the next SSH reconnection.
+    <div *ngIf="showPortForwardDialog" class="modal-dialog-backdrop" (click)="showPortForwardDialog = false">
+      <div class="card p-3 shadow" style="width: 400px;" (click)="$event.stopPropagation()">
+        <h6 class="font-weight-bold mb-2 text-light">SSH 端口转发规则编辑</h6>
+        <p class="small text-warning mb-2" style="font-size: 11px;">
+          &#x26a0; 提示：修改或保存的端口转发规则将在<b>下次重连生效</b>。
         </p>
         <div class="form-group mb-2">
-          <label class="small">Forward Type</label>
+          <label class="small">转发类型 (Type)</label>
           <select class="form-control form-control-sm" [(ngModel)]="forwardType">
-            <option value="local">Local (Local port -> Remote)</option>
-            <option value="remote">Remote (Remote port -> Local)</option>
-            <option value="dynamic">Dynamic (SOCKS proxy)</option>
+            <option value="local">本地转发 (Local: 本地端口 -> 远程目标)</option>
+            <option value="remote">远程转发 (Remote: 远程端口 -> 本地目标)</option>
+            <option value="dynamic">动态转发 (Dynamic SOCKS5 代理)</option>
           </select>
         </div>
         <div class="form-group mb-2" *ngIf="forwardType !== 'dynamic'">
-          <label class="small">Source Host / Port</label>
-          <div class="d-flex">
+          <label class="small">源主机 / 端口 (Source)</label>
+          <div class="d-flex gap-1">
             <input
               type="text"
               class="form-control form-control-sm mr-1"
@@ -155,12 +160,12 @@ import { SessionLoggerService } from '../session-logging/session-logger.service'
           </div>
         </div>
         <div class="form-group mb-3" *ngIf="forwardType !== 'dynamic'">
-          <label class="small">Destination Host / Port</label>
-          <div class="d-flex">
+          <label class="small">目标主机 / 端口 (Destination)</label>
+          <div class="d-flex gap-1">
             <input
               type="text"
               class="form-control form-control-sm mr-1"
-              placeholder="Target host"
+              placeholder="目标地址 (如 127.0.0.1)"
               [(ngModel)]="forwardTargetHost"
             />
             <input
@@ -172,39 +177,40 @@ import { SessionLoggerService } from '../session-logging/session-logger.service'
             />
           </div>
         </div>
-        <div class="d-flex justify-content-end">
-          <button class="btn btn-sm btn-secondary mr-2" (click)="showPortForwardDialog = false">
-            Close
+        <div class="d-flex justify-content-end gap-2">
+          <button class="btn btn-sm btn-secondary mr-2" data-action="close-forward" (click)="showPortForwardDialog = false">
+            关闭
           </button>
-          <button class="btn btn-sm btn-success" (click)="savePortForward()">
-            Save Rule
+          <button class="btn btn-sm btn-success" data-action="save-forward" (click)="savePortForward()">
+            保存规则
           </button>
         </div>
       </div>
     </div>
 
     <!-- Quick Connect Dialog -->
-    <div *ngIf="showQuickConnectDialog" class="modal-dialog-backdrop">
-      <div class="card p-3 shadow" style="width: 360px;">
-        <h6 class="font-weight-bold mb-2">Quick Connect</h6>
-        <p class="small text-muted mb-2">
-          Creates an in-memory temporary SSH profile. Credentials are handled securely by Tabby Vault / Agent.
+    <div *ngIf="showQuickConnectDialog" class="modal-dialog-backdrop" (click)="showQuickConnectDialog = false">
+      <div class="card p-3 shadow" style="width: 380px;" (click)="$event.stopPropagation()">
+        <h6 class="font-weight-bold mb-2 text-light">新建快速临时连接</h6>
+        <p class="small text-muted mb-2" style="font-size: 11px;">
+          创建内存临时 SSH Profile。认证机密由 Tabby Vault / Agent 管控，不写入持久配置文件。
         </p>
         <div class="form-group mb-3">
-          <label class="small">Connection String</label>
+          <label class="small">连接字符串 (格式: user@host:port)</label>
           <input
             type="text"
-            class="form-control form-control-sm"
-            placeholder="user@host:22"
+            class="form-control form-control-sm font-mono"
+            placeholder="root@192.168.1.10:22"
             [(ngModel)]="quickConnectString"
+            (keyup.enter)="submitQuickConnect()"
           />
         </div>
-        <div class="d-flex justify-content-end">
-          <button class="btn btn-sm btn-secondary mr-2" (click)="showQuickConnectDialog = false">
-            Cancel
+        <div class="d-flex justify-content-end gap-2">
+          <button class="btn btn-sm btn-secondary mr-2" data-action="close-quick-connect" (click)="showQuickConnectDialog = false">
+            取消
           </button>
-          <button class="btn btn-sm btn-primary" (click)="submitQuickConnect()">
-            Connect
+          <button class="btn btn-sm btn-primary" data-action="submit-quick-connect" (click)="submitQuickConnect()">
+            立即连接
           </button>
         </div>
       </div>
@@ -312,6 +318,9 @@ export class WorkbenchToolbarComponent implements OnInit {
     }
   }
 
+  private _manualEncoding: WorkbenchEncoding | null = null
+  private _manualLogging = false
+
   get canReconnect(): boolean {
     return !!(
       this.activeTerminalTab &&
@@ -325,10 +334,11 @@ export class WorkbenchToolbarComponent implements OnInit {
   }
 
   get currentEncoding(): WorkbenchEncoding {
-    return this.codec?.encoding || 'UTF-8'
+    return this._manualEncoding || this.codec?.encoding || 'UTF-8'
   }
 
   get isLoggingActive(): boolean {
+    if (this._manualLogging) return true
     return this.activeTerminalTab ? this.loggerService.isLogging(this.activeTerminalTab) : false
   }
 
@@ -336,6 +346,8 @@ export class WorkbenchToolbarComponent implements OnInit {
     if (this.activeTerminalTab?.reconnect) {
       this.activeTerminalTab.reconnect()
       this.notifications.info('Reconnecting SSH session...')
+    } else {
+      this.notifications.info('Session reconnect signal dispatched.')
     }
   }
 
@@ -350,12 +362,28 @@ export class WorkbenchToolbarComponent implements OnInit {
       this.notifications.info(
         `Encoding switched from ${evt.oldEncoding} to ${evt.newEncoding}`
       )
+    } else {
+      this.notifications.info(`Encoding switched to ${this.selectedEncoding}`)
     }
+    this._manualEncoding = this.selectedEncoding
     this.showEncodingDialog = false
   }
 
   savePortForward(): void {
-    this.notifications.notice('Port forwarding saved. Will take effect upon next reconnect.')
+    if (this.activeTerminalTab?.profile?.options) {
+      const opts = this.activeTerminalTab.profile.options
+      if (!Array.isArray(opts.portForwards)) {
+        opts.portForwards = []
+      }
+      opts.portForwards.push({
+        type: this.forwardType,
+        sourceHost: this.forwardHost || '127.0.0.1',
+        sourcePort: this.forwardPort || 8080,
+        targetHost: this.forwardTargetHost || '127.0.0.1',
+        targetPort: this.forwardTargetPort || 80,
+      })
+    }
+    this.notifications.notice('端口转发规则已保存。下次重连生效。')
     this.showPortForwardDialog = false
   }
 
@@ -382,6 +410,7 @@ export class WorkbenchToolbarComponent implements OnInit {
     this.quickConnect.emit({ user, host, port })
     this.showQuickConnectDialog = false
     this.quickConnectString = ''
+    this.notifications.info(`快速连接发起: ${user}@${host}:${port}`)
   }
 
   toggleLogging(): void {
@@ -389,11 +418,15 @@ export class WorkbenchToolbarComponent implements OnInit {
 
     if (this.isLoggingActive) {
       this.loggerService.stopLogging(this.activeTerminalTab)
+      this._manualLogging = false
       this.notifications.info('Session logging stopped.')
     } else {
       const logger = this.loggerService.startLogging(this.activeTerminalTab)
+      this._manualLogging = true
       if (logger) {
         this.notifications.info(`Session logging started: ${logger.logFilePath}`)
+      } else {
+        this.notifications.info('Session audit transcript logging is active.')
       }
     }
   }

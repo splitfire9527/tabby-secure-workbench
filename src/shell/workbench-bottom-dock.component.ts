@@ -6,40 +6,51 @@ import { TransferTask, TransferSummary } from '../transfer-store/transfer.model'
 @Component({
   selector: 'workbench-bottom-dock',
   template: `
-    <div class="dock-header" (click)="toggleExpanded($event)">
-      <div class="d-flex align-items-center">
-        <span class="mr-2 icon-caret">
-          <svg *ngIf="isExpanded" viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
-            <polygon points="6 9 12 15 18 9"></polygon>
+    <div class="dock-header">
+      <div class="d-flex align-items-center gap-2">
+        <span class="font-weight-bold text-warning d-flex align-items-center" style="font-size: 11px;">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" class="mr-1">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
           </svg>
-          <svg *ngIf="!isExpanded" viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
-            <polygon points="6 15 12 9 18 15"></polygon>
-          </svg>
+          传输任务队列 (Tab 隔离)
         </span>
-        <span class="font-weight-bold mr-3 text-light">Transfers</span>
-        <span class="dock-summary text-muted">
-          Running: <strong class="text-primary">{{ summary.running }}</strong> |
-          Done: <strong class="text-success">{{ summary.succeeded }}</strong> |
-          Failed: <strong class="text-danger">{{ summary.failed }}</strong>
+        <span class="text-muted small">|</span>
+        <span class="dock-summary text-muted" style="font-size: 11px;">
+          <span class="text-info mr-2">传输中: <strong>{{ summary.running }}</strong></span>
+          <span class="text-success mr-2">已完成: <strong>{{ summary.succeeded }}</strong></span>
+          <span class="text-danger" *ngIf="summary.failed > 0">失败: <strong>{{ summary.failed }}</strong></span>
         </span>
       </div>
 
-      <div class="d-flex align-items-center" (click)="$event.stopPropagation()">
+      <div class="d-flex align-items-center gap-2">
         <button
           *ngIf="summary.running > 0"
-          class="btn btn-xs btn-outline-danger py-0 px-2 mr-2"
-          style="font-size: 11px;"
+          class="btn btn-xs btn-outline-danger py-0 px-2"
+          style="font-size: 10px;"
           (click)="cancelAll()"
+          title="取消所有进行中任务"
         >
-          Cancel All
+          全部取消
         </button>
         <button
           *ngIf="summary.succeeded > 0 || summary.failed > 0 || summary.cancelled > 0"
-          class="btn btn-xs btn-outline-secondary py-0 px-2"
-          style="font-size: 11px;"
+          class="btn btn-xs btn-outline-secondary py-0 px-2 text-muted"
+          style="font-size: 10px;"
           (click)="clearCompleted()"
+          title="清空已完成记录"
         >
-          Clear Completed
+          清空已完成
+        </button>
+        <button
+          class="btn btn-xs btn-link text-muted p-0 ml-2"
+          data-action="collapse-dock"
+          (click)="toggleExpanded($event)"
+          title="收起抽屉"
+          style="line-height: 1;"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
         </button>
       </div>
     </div>
@@ -111,8 +122,8 @@ import { TransferTask, TransferSummary } from '../transfer-store/transfer.model'
         display: flex;
         flex-direction: column;
         width: 100%;
-        background: #21252b;
-        border-top: 1px solid #3e4451;
+        background: #1a1d23;
+        border-top: 1px solid #181a1f;
         flex-shrink: 0;
         box-sizing: border-box;
         overflow: hidden;
@@ -122,14 +133,13 @@ import { TransferTask, TransferSummary } from '../transfer-store/transfer.model'
       .dock-header {
         height: 28px;
         min-height: 28px;
-        background: #282c34;
+        background: #21252b;
         padding: 0 12px;
         display: flex;
         align-items: center;
         justify-content: space-between;
         font-size: 11px;
-        cursor: pointer;
-        border-bottom: 1px solid rgba(62, 68, 81, 0.5);
+        border-bottom: 1px solid #181a1f;
       }
       .icon-caret {
         display: inline-flex;
@@ -172,9 +182,14 @@ export class WorkbenchBottomDockComponent implements OnInit, OnDestroy {
     total: 0,
   }
 
+  @HostBinding('style.display')
+  get hostDisplay(): string {
+    return this.isExpanded ? 'flex' : 'none'
+  }
+
   @HostBinding('style.height.px')
   get hostHeight(): number {
-    return this.isExpanded ? this.height : 28
+    return this.isExpanded ? this.height : 0
   }
 
   private subs: Subscription[] = []

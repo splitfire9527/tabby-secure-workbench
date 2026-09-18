@@ -1,3 +1,4 @@
+import { Injectable } from '@angular/core'
 import * as path from 'path'
 import * as crypto from 'crypto'
 import * as fs from 'fs'
@@ -37,6 +38,7 @@ export interface OverwriteUploadResult {
  * 5. Atomic rename(temporary, target).
  * 6. If any step fails: keep original target, attempt deleting temporary file, mark failed.
  */
+@Injectable({ providedIn: 'root' })
 export class OverwriteUploader {
   async uploadWithAtomicOverwrite(
     client: RemoteSftpClient,

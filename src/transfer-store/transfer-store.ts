@@ -41,6 +41,10 @@ export class TransferStore {
     return this.tasksSubject.value
   }
 
+  getTasks(): TransferTask[] {
+    return this.tasksSubject.value
+  }
+
   getSummary(): TransferSummary {
     let queued = 0
     let running = 0

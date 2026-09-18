@@ -1,17 +1,36 @@
-import { Injectable, NgZone, ComponentFactoryResolver, ApplicationRef, Injector, EmbeddedViewRef } from '@angular/core'
+import {
+  Injectable,
+  NgZone,
+  ComponentFactoryResolver,
+  ApplicationRef,
+  Injector,
+  EmbeddedViewRef,
+  ComponentRef,
+} from '@angular/core'
 import { TerminalDecorator, BaseTerminalTabComponent } from 'tabby-terminal'
 import { AppService, ConfigService, ProfilesService, NotificationsService } from 'tabby-core'
 import { Subscription } from 'rxjs'
 import { TransferStore } from '../transfer-store/transfer-store'
 import { WorkbenchShellComponent } from './workbench-shell.component'
+import { WorkbenchHeaderComponent } from './workbench-header.component'
+import { WorkbenchSftpPaneComponent } from './workbench-sftp-pane.component'
+import { WorkbenchBottomDockComponent } from './workbench-bottom-dock.component'
 
 const WORKBENCH_SESSION_BAR_CLASS = 'workbench-decorated-session-bar'
 const WORKBENCH_STATUS_BAR_CLASS = 'workbench-decorated-status-bar'
+
+interface TabMountedComponents {
+  headerRef: ComponentRef<WorkbenchHeaderComponent>
+  sftpRef: ComponentRef<WorkbenchSftpPaneComponent>
+  dockRef: ComponentRef<WorkbenchBottomDockComponent>
+  statusEl: HTMLElement
+}
 
 @Injectable()
 export class WorkbenchTerminalDecorator extends TerminalDecorator {
   private tabSubs = new WeakMap<BaseTerminalTabComponent, Subscription[]>()
   private tabStores = new WeakMap<BaseTerminalTabComponent, TransferStore>()
+  private tabMounted = new WeakMap<BaseTerminalTabComponent, TabMountedComponents>()
 
   constructor(
     private app: AppService,
@@ -34,6 +53,7 @@ export class WorkbenchTerminalDecorator extends TerminalDecorator {
     const store = new TransferStore()
     this.tabStores.set(tab, store)
     ;(tab as any).__workbenchTransferStore = store
+    ;(tab as any).__workbenchStore = store
 
     const subs: Subscription[] = []
 
@@ -43,83 +63,82 @@ export class WorkbenchTerminalDecorator extends TerminalDecorator {
         if (!host) return false
         if (host.querySelector(`.${WORKBENCH_SESSION_BAR_CLASS}`)) return true
 
-        const container = host.querySelector('.terminal-container') || host.querySelector('terminal-container') || host
+        const container =
+          host.querySelector('.terminal-container') ||
+          host.querySelector('terminal-container') ||
+          host
         if (!container) return false
 
-        // 1. Create Top Session Header & Unified Toolbar
-        const headerEl = document.createElement('div')
-        headerEl.className = `${WORKBENCH_SESSION_BAR_CLASS} d-flex align-items-center justify-content-between px-3`
-        headerEl.style.height = '32px'
-        headerEl.style.minHeight = '32px'
-        headerEl.style.background = '#21252b'
-        headerEl.style.borderBottom = '1px solid #181a1f'
-        headerEl.style.fontSize = '12px'
-        headerEl.style.color = '#abb2bf'
-        headerEl.style.zIndex = '5'
-        headerEl.style.userSelect = 'none'
+        // Ensure host is flex column
+        host.style.display = 'flex'
+        host.style.flexDirection = 'column'
+        host.style.height = '100%'
+        host.style.overflow = 'hidden'
 
-        const profileName = (tab as any).profile?.name || (tab as any).title || 'SSH Session'
-        const profileHost = (tab as any).profile?.options?.host
-        const profileUser = (tab as any).profile?.options?.user || 'user'
-        const profilePort = (tab as any).profile?.options?.port || 22
-        const hostInfo = profileHost ? `${profileUser}@${profileHost}:${profilePort}` : 'Local PTY'
+        // Hide native Tabby floating/pinned toolbar so our header toolbar is the single unified bar
+        const nativeToolbar = host.querySelector('terminal-toolbar') as HTMLElement
+        if (nativeToolbar) nativeToolbar.style.display = 'none'
+        const nativeToolbarSpacer = host.querySelector('.terminal-toolbar-spacer') as HTMLElement
+        if (nativeToolbarSpacer) nativeToolbarSpacer.style.display = 'none'
 
-        headerEl.innerHTML = `
-          <div class="d-flex align-items-center gap-2" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-            <span style="color: #fff; font-weight: 600;">${profileName}</span>
-            <span style="color: #5c6370;">-</span>
-            <span style="color: #98c379; font-family: monospace;">${hostInfo}</span>
-            <span class="badge" style="background: rgba(152, 195, 121, 0.15); color: #98c379; border: 1px solid rgba(152, 195, 121, 0.3); font-size: 9px; padding: 2px 5px;">CONNECTED</span>
-          </div>
-          <div class="d-flex align-items-center gap-1">
-            <button type="button" class="btn btn-sm btn-link text-muted p-1" data-action="reconnect" title="Reconnect session" style="font-size: 11px; text-decoration: none;">
-              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#61afef" stroke-width="2" style="vertical-align: -2px;"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-              <span style="margin-left: 3px;">Reconnect</span>
-            </button>
-            <button type="button" class="btn btn-sm btn-link text-muted p-1" data-action="encoding" title="Switch Encoding (Current: UTF-8)" style="font-size: 11px; text-decoration: none;">
-              <span style="color: #e5c07b; font-weight: bold; font-family: monospace;">T</span>
-              <span style="margin-left: 3px;">UTF-8</span>
-            </button>
-            <button type="button" class="btn btn-sm btn-link text-muted p-1" data-action="logging" title="Session Audit Logging" style="font-size: 11px; text-decoration: none;">
-              <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #e06c75; margin-right: 3px;"></span>
-              <span>Log</span>
-            </button>
-          </div>
-        `
+        const termContent = (host.querySelector('.content') ||
+          host.querySelector('.terminal-container') ||
+          host.querySelector('terminal-container') ||
+          container) as HTMLElement
+        if (termContent) {
+          termContent.style.flex = '1 1 0'
+          termContent.style.minHeight = '0'
+        }
 
-        // Header button events
-        headerEl.querySelector('[data-action="reconnect"]')?.addEventListener('click', (ev) => {
-          ev.preventDefault()
-          ev.stopPropagation()
-          if (typeof (tab as any).reconnect === 'function') {
-            (tab as any).reconnect()
-          }
-        })
+        // 1. Mount WorkbenchHeaderComponent at the top
+        const headerFactory = this.resolver.resolveComponentFactory(WorkbenchHeaderComponent)
+        const headerRef = headerFactory.create(this.injector)
+        headerRef.instance.activeTerminalTab = tab
+        headerRef.instance.activeProfile = (tab as any).profile || null
+        headerRef.instance.viewMode = 'pty'
+        this.appRef.attachView(headerRef.hostView)
 
-        headerEl.querySelector('[data-action="encoding"]')?.addEventListener('click', (ev) => {
-          ev.preventDefault()
-          ev.stopPropagation()
-          this.notifications.info('Current Encoding: UTF-8 (Stateful stream codec active)')
-        })
+        const headerDom = (headerRef.hostView as EmbeddedViewRef<any>).rootNodes[0] as HTMLElement
+        headerDom.classList.add(WORKBENCH_SESSION_BAR_CLASS)
+        host.insertBefore(headerDom, host.firstChild)
 
-        headerEl.querySelector('[data-action="logging"]')?.addEventListener('click', (ev) => {
-          ev.preventDefault()
-          ev.stopPropagation()
-          this.notifications.info('Session audit transcript logging is active.')
-        })
+        // 2. Mount WorkbenchBottomDockComponent (Transfer Queue Dock)
+        const dockFactory = this.resolver.resolveComponentFactory(WorkbenchBottomDockComponent)
+        const dockRef = dockFactory.create(this.injector)
+        dockRef.instance.store = store
+        dockRef.instance.height = 140
+        dockRef.instance.isExpanded = false // Initially hidden as per DESIGN.md §4.3
+        this.appRef.attachView(dockRef.hostView)
 
-        host.insertBefore(headerEl, host.firstChild)
+        const dockDom = (dockRef.hostView as EmbeddedViewRef<any>).rootNodes[0] as HTMLElement
+        ;(dockDom as any).__workbenchStore = store
+        ;(host as any).__workbenchStore = store
+        host.appendChild(dockDom)
 
-        // 2. Create Bottom Status Bar & Transfer Dock
+        // 3. Mount WorkbenchSftpPaneComponent (inserted BEFORE dockDom)
+        const sftpFactory = this.resolver.resolveComponentFactory(WorkbenchSftpPaneComponent)
+        const sftpRef = sftpFactory.create(this.injector)
+        sftpRef.instance.store = store
+        sftpRef.instance.activeTab = tab
+        this.appRef.attachView(sftpRef.hostView)
+
+        const sftpDom = (sftpRef.hostView as EmbeddedViewRef<any>).rootNodes[0] as HTMLElement
+        sftpDom.style.display = 'none' // Initially hidden, toggled via viewMode
+        sftpDom.style.flex = '1 1 0'
+        sftpDom.style.minHeight = '0'
+        host.insertBefore(sftpDom, dockDom)
+
+        // 4. Create Bottom Status Bar
         const statusEl = document.createElement('div')
         statusEl.className = `${WORKBENCH_STATUS_BAR_CLASS} workbench-status-bar d-flex align-items-center justify-content-between px-3`
-        statusEl.style.height = '22px'
-        statusEl.style.minHeight = '22px'
+        statusEl.style.height = '24px'
+        statusEl.style.minHeight = '24px'
         statusEl.style.background = '#181a1f'
         statusEl.style.borderTop = '1px solid #282c34'
         statusEl.style.fontSize = '11px'
         statusEl.style.color = '#abb2bf'
         statusEl.style.userSelect = 'none'
+        statusEl.style.flexShrink = '0'
 
         let rows = tab.size?.rows || 36
         let cols = tab.size?.columns || 118
@@ -132,11 +151,11 @@ export class WorkbenchTerminalDecorator extends TerminalDecorator {
               <span class="status-ready-text" style="color: #98c379; font-weight: 500;">Ready</span>
             </div>
             <div class="d-flex align-items-center gap-3">
-              <span class="status-item" style="border-left: 1px solid rgba(62,68,81,0.6); padding-left: 8px;">${cipher}</span>
-              <span class="status-item" style="border-left: 1px solid rgba(62,68,81,0.6); padding-left: 8px;">${rows} Rows, ${cols} Cols</span>
-              <span class="status-item" style="border-left: 1px solid rgba(62,68,81,0.6); padding-left: 8px;">Xterm</span>
-              <span class="status-item transfer-pill" data-action="toggle-dock" style="border-left: 1px solid rgba(62,68,81,0.6); padding-left: 8px; color: #e5c07b; cursor: pointer;" title="Toggle Transfer Queue">
-                ⚡ 传输中: ${running} | 完成: ${succeeded} | 失败: ${failed}
+              <span class="status-item text-muted" style="border-left: 1px solid rgba(62,68,81,0.6); padding-left: 8px;">${cipher}</span>
+              <span class="status-item text-muted" style="border-left: 1px solid rgba(62,68,81,0.6); padding-left: 8px;">${rows} Rows, ${cols} Cols</span>
+              <span class="status-item text-muted" style="border-left: 1px solid rgba(62,68,81,0.6); padding-left: 8px;">Xterm</span>
+              <span class="status-item transfer-pill font-weight-bold" data-action="toggle-dock" style="border-left: 1px solid rgba(62,68,81,0.6); padding-left: 8px; color: #e5c07b; cursor: pointer;" title="点击展开/收起传输队列抽屉">
+                ⚡ 传输中: <strong>${running}</strong> | 完成: <strong style="color: #98c379;">${succeeded}</strong> | 失败: <strong style="color: #e06c75;">${failed}</strong>
               </span>
             </div>
           `
@@ -145,34 +164,115 @@ export class WorkbenchTerminalDecorator extends TerminalDecorator {
         renderStatusContent(0, 0, 0)
         host.appendChild(statusEl)
 
+        // Transfer pill click directly toggles the Bottom Dock expansion!
         statusEl.addEventListener('click', (ev) => {
           const target = (ev.target as HTMLElement)?.closest?.('[data-action="toggle-dock"]')
           if (target) {
             ev.preventDefault()
             ev.stopPropagation()
-            const summary = store.getSummary()
-            this.notifications.info(`传输队列 - 传输中: ${summary.running}, 完成: ${summary.succeeded}, 失败: ${summary.failed}`)
+            this.zone.run(() => {
+              dockRef.instance.isExpanded = !dockRef.instance.isExpanded
+              try {
+                dockRef.changeDetectorRef.detectChanges()
+              } catch {}
+            })
           }
         })
 
-        // Listen to tab resizing
+        // View Mode Switch Handler
+        const switchViewMode = (mode: 'pty' | 'sftp') => {
+          this.zone.run(() => {
+            headerRef.instance.viewMode = mode
+            try {
+              headerRef.changeDetectorRef.detectChanges()
+            } catch {}
+
+            if (mode === 'sftp') {
+              if (termContent) termContent.style.display = 'none'
+              if (nativeToolbar) nativeToolbar.style.display = 'none'
+              if (nativeToolbarSpacer) nativeToolbarSpacer.style.display = 'none'
+              sftpDom.style.display = 'flex'
+              sftpRef.instance.loadLocalFiles()
+              sftpRef.instance.loadRemoteFiles()
+            } else {
+              sftpDom.style.display = 'none'
+              if (termContent) termContent.style.display = ''
+              if (typeof (tab as any).frontend?.focus === 'function') {
+                ;(tab as any).frontend.focus()
+              }
+            }
+          })
+        }
+
+        subs.push(headerRef.instance.viewModeChange.subscribe((mode) => switchViewMode(mode)))
+        subs.push(sftpRef.instance.backToTerminal.subscribe(() => switchViewMode('pty')))
+
+        // Quick Connect
+        subs.push(
+          headerRef.instance.quickConnect.subscribe(async (ev) => {
+            try {
+              const q = `${ev.user}@${ev.host}:${ev.port}`
+              const p = await this.profilesService.quickConnect(q)
+              if (p) {
+                await this.profilesService.openNewTabForProfile(p)
+              }
+            } catch (err) {
+              console.warn('[Workbench] Quick connect failed', err)
+            }
+          })
+        )
+
+        // Bottom Dock expansion events
+        subs.push(
+          dockRef.instance.isExpandedChange.subscribe((isExp) => {
+            this.zone.run(() => {
+              dockRef.instance.isExpanded = isExp
+              try {
+                dockRef.changeDetectorRef.detectChanges()
+              } catch {}
+            })
+          })
+        )
+
+        // TransferStore summary updates & autoExpand on running transfer
+        subs.push(
+          store.summary$.subscribe((summary) => {
+            this.zone.run(() => {
+              renderStatusContent(summary.running, summary.succeeded, summary.failed)
+              if (summary.running > 0 && !dockRef.instance.isExpanded) {
+                dockRef.instance.isExpanded = true
+                try {
+                  dockRef.changeDetectorRef.detectChanges()
+                } catch {}
+              }
+            })
+          })
+        )
+
+        // Tab Resizing
         if (tab.frontend?.resize$) {
           subs.push(
             tab.frontend.resize$.subscribe((sz: any) => {
               if (sz?.rows) rows = sz.rows
               if (sz?.columns) cols = sz.columns
-              renderStatusContent(0, 0, 0)
+              const cur = store.getSummary()
+              renderStatusContent(cur.running, cur.succeeded, cur.failed)
             })
           )
         }
 
-        // Listen to transfer store summary
-        subs.push(
-          store.summary$.subscribe((summary) => {
-            renderStatusContent(summary.running, summary.succeeded, summary.failed)
-          })
-        )
+        // Tab Title Change
+        if (tab.titleChange$) {
+          subs.push(
+            tab.titleChange$.subscribe(() => {
+              try {
+                headerRef.changeDetectorRef.detectChanges()
+              } catch {}
+            })
+          )
+        }
 
+        this.tabMounted.set(tab, { headerRef, sftpRef, dockRef, statusEl })
         return true
       } catch (err) {
         console.warn('[Workbench] Error decorating terminal tab', err)
@@ -202,6 +302,30 @@ export class WorkbenchTerminalDecorator extends TerminalDecorator {
     if (store) {
       store.destroy()
       this.tabStores.delete(tab)
+    }
+
+    const mounted = this.tabMounted.get(tab)
+    if (mounted) {
+      try {
+        this.appRef.detachView(mounted.headerRef.hostView)
+        mounted.headerRef.destroy()
+      } catch {}
+
+      try {
+        this.appRef.detachView(mounted.sftpRef.hostView)
+        mounted.sftpRef.destroy()
+      } catch {}
+
+      try {
+        this.appRef.detachView(mounted.dockRef.hostView)
+        mounted.dockRef.destroy()
+      } catch {}
+
+      try {
+        mounted.statusEl.remove()
+      } catch {}
+
+      this.tabMounted.delete(tab)
     }
 
     try {
