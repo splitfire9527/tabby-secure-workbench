@@ -331,4 +331,141 @@ app-root {
       }
     }
   }
+
+  // Session Cards styling in Drawer
+  .session-card {
+    padding: 6px 8px !important;
+    border-radius: 4px !important;
+    border: 1px solid transparent !important;
+    cursor: pointer !important;
+    transition: all 0.15s ease !important;
+    margin-bottom: 2px !important;
+
+    &:hover {
+      background: #282c34 !important;
+      border-color: #3e4451 !important;
+    }
+
+    &.selected {
+      background: #2c313a !important;
+      border-color: #4b5263 !important;
+    }
+
+    &.active {
+      border-color: rgba(190, 80, 70, 0.5) !important;
+      background: rgba(190, 80, 70, 0.15) !important;
+      color: #ffffff !important;
+
+      .tree-label {
+        color: #ffffff !important;
+      }
+    }
+
+    .session-subtitle {
+      font-size: 10px !important;
+      color: #7f848e !important;
+      margin-top: 2px !important;
+    }
+
+    .badge-protocol {
+      font-size: 9px !important;
+      padding: 1px 4px !important;
+      border-radius: 3px !important;
+      background: rgba(190, 80, 70, 0.2) !important;
+      color: #e06c75 !important;
+      font-family: monospace !important;
+    }
+  }
+
+  .drawer-bottom-bar {
+    background: #181a1f !important;
+    border-top: 1px solid #282c34 !important;
+    min-height: 32px !important;
+
+    .btn-mgr-tool-sm {
+      background: none !important;
+      border: none !important;
+      color: #abb2bf !important;
+      padding: 3px 5px !important;
+      border-radius: 3px !important;
+      cursor: pointer !important;
+
+      &:hover:not(:disabled) {
+        background: #282c34 !important;
+        color: #ffffff !important;
+      }
+
+      &:disabled {
+        opacity: 0.3 !important;
+        cursor: default !important;
+      }
+    }
+  }
+
+  // SSH Pilot Home Landing Screen
+  .workbench-home-screen {
+    background: #1e2227 !important;
+    color: #abb2bf !important;
+    user-select: none !important;
+
+    .home-search-box {
+      background: #181a1f !important;
+      border: 1px solid #3e4451 !important;
+      transition: border-color 0.15s ease !important;
+
+      &:focus-within {
+        border-color: #61afef !important;
+      }
+
+      .home-search-input {
+        background: transparent !important;
+        border: none !important;
+        outline: none !important;
+        color: #ffffff !important;
+        font-size: 13px !important;
+
+        &::placeholder {
+          color: #5c6370 !important;
+        }
+      }
+    }
+
+    .home-recent-section {
+      .home-recent-title {
+        font-size: 11px !important;
+        color: #5c6370 !important;
+        letter-spacing: 0.5px !important;
+      }
+
+      .home-recent-item {
+        background: rgba(33, 37, 43, 0.6) !important;
+        border: 1px solid transparent !important;
+        transition: background 0.15s ease, border-color 0.15s ease !important;
+
+        &:hover {
+          background: #282c34 !important;
+          border-color: #3e4451 !important;
+        }
+
+        .info-icon {
+          opacity: 0.5 !important;
+          &:hover {
+            opacity: 1 !important;
+          }
+        }
+      }
+    }
+
+    .home-footer {
+      font-size: 11px !important;
+      color: #5c6370 !important;
+
+      span {
+        cursor: pointer !important;
+        &:hover {
+          color: #abb2bf !important;
+        }
+      }
+    }
+  }
 }

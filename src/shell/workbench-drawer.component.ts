@@ -103,20 +103,23 @@ interface ProfileFolderGroup {
             <div *ngIf="group.expanded" class="tree-group-children">
               <div
                 *ngFor="let p of group.profiles"
-                class="tree-node tree-leaf"
+                class="tree-node session-card"
                 [class.selected]="selectedProfile?.id === p.id"
                 [class.active]="isProfileActive(p)"
                 (click)="onSelectProfile(p)"
                 (dblclick)="onConnectProfile(p)"
                 [title]="getProfileTooltip(p)"
               >
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" class="tree-icon leaf-icon">
-                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                  <line x1="8" y1="21" x2="16" y2="21"></line>
-                  <line x1="12" y1="17" x2="12" y2="21"></line>
-                </svg>
-                <span class="tree-label text-truncate">{{ p.name }}</span>
-                <span *ngIf="isProfileActive(p)" class="status-dot online ml-auto"></span>
+                <div class="d-flex align-items-center justify-content-between">
+                  <div class="d-flex align-items-center text-truncate gap-1">
+                    <span class="status-dot" [class.online]="isProfileActive(p)"></span>
+                    <span class="tree-label font-weight-bold text-truncate">{{ p.name }}</span>
+                  </div>
+                  <span class="badge badge-protocol font-mono">{{ getProfileTypeBadge(p) }}</span>
+                </div>
+                <div class="session-subtitle font-mono text-truncate pl-3">
+                  {{ getProfileSubtitle(p) }}
+                </div>
               </div>
             </div>
           </div>
@@ -124,26 +127,48 @@ interface ProfileFolderGroup {
           <!-- Ungrouped Profiles -->
           <div
             *ngFor="let p of filteredUngroupedProfiles"
-            class="tree-node tree-leaf"
+            class="tree-node session-card"
             [class.selected]="selectedProfile?.id === p.id"
             [class.active]="isProfileActive(p)"
             (click)="onSelectProfile(p)"
             (dblclick)="onConnectProfile(p)"
             [title]="getProfileTooltip(p)"
           >
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" class="tree-icon leaf-icon">
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-              <line x1="8" y1="21" x2="16" y2="21"></line>
-              <line x1="12" y1="17" x2="12" y2="21"></line>
-            </svg>
-            <span class="tree-label text-truncate">{{ p.name }}</span>
-            <span *ngIf="isProfileActive(p)" class="status-dot online ml-auto"></span>
+            <div class="d-flex align-items-center justify-content-between">
+              <div class="d-flex align-items-center text-truncate gap-1">
+                <span class="status-dot" [class.online]="isProfileActive(p)"></span>
+                <span class="tree-label font-weight-bold text-truncate">{{ p.name }}</span>
+              </div>
+              <span class="badge badge-protocol font-mono">{{ getProfileTypeBadge(p) }}</span>
+            </div>
+            <div class="session-subtitle font-mono text-truncate pl-3">
+              {{ getProfileSubtitle(p) }}
+            </div>
           </div>
 
           <div *ngIf="totalProfilesCount === 0" class="text-muted small text-center p-3">
             No saved profiles found. Click "New" to create one.
           </div>
         </div>
+      </div>
+
+      <!-- Bottom Toolbar (SSH Pilot style: Edit, Trash, Key, Relay) -->
+      <div class="drawer-bottom-bar d-flex align-items-center justify-content-between p-2 mt-auto">
+        <div class="d-flex align-items-center gap-1">
+          <button class="btn-mgr-tool-sm" title="Edit Profile" [disabled]="!selectedProfile" (click)="editSelectedProfile()">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          </button>
+          <button class="btn-mgr-tool-sm" title="Credentials & Keys Manager">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m21 3-9.5 9.5"/><path d="m15.5 7.5 3 3M14 9l2 2"/></svg>
+          </button>
+          <button class="btn-mgr-tool-sm" title="Cross-Connection Relay Clipboard">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+          </button>
+          <button class="btn-mgr-tool-sm text-danger" title="Delete Profile" [disabled]="!selectedProfile" (click)="deleteSelectedProfile()">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
+        <span class="text-muted small font-mono">{{ totalProfilesCount }} Sessions</span>
       </div>
     </div>
 
@@ -737,5 +762,37 @@ export class WorkbenchDrawerComponent implements OnInit, OnDestroy {
 
   updateSettings(): void {
     this.config.save()
+  }
+
+  getProfileTypeBadge(p: any): string {
+    if (!p) return 'SSH2'
+    const type = (p.type || '').toUpperCase()
+    if (type.includes('SERIAL')) return 'SERIAL'
+    if (type.includes('TELNET')) return 'TELNET'
+    if (type.includes('LOCAL')) return 'LOCAL'
+    return 'SSH2'
+  }
+
+  getProfileSubtitle(p: any): string {
+    if (!p) return ''
+    if (p.options?.host) {
+      return `${p.options.user || 'root'}@${p.options.host}:${p.options.port || 22}`
+    }
+    if (p.options?.command) {
+      return p.options.command
+    }
+    return p.type || 'terminal'
+  }
+
+  editSelectedProfile(): void {
+    if (!this.selectedProfile) return
+    this.notifications.info(`Editing profile ${this.selectedProfile.name}...`)
+  }
+
+  deleteSelectedProfile(): void {
+    if (!this.selectedProfile) return
+    this.savedProfiles = this.savedProfiles.filter(p => p.id !== this.selectedProfile.id)
+    this.selectedProfile = null
+    this.notifications.info('Profile deleted from current view.')
   }
 }

@@ -34,9 +34,11 @@ export class WorkbenchHostShellService {
     }
 
     const tryMount = () => {
-      const windowEl = document.querySelector('app-root .window') as HTMLElement
+      const windowEl = (document.querySelector('app-root .window') ||
+        document.querySelector('.window') ||
+        document.querySelector('app-root')) as HTMLElement
       if (!windowEl) return false
-      if (windowEl.querySelector('workbench-sidebar')) return true
+      if (document.querySelector('workbench-sidebar')) return true
 
       this.zone.run(() => {
         try {
@@ -47,6 +49,7 @@ export class WorkbenchHostShellService {
           const domElem = (this.sidebarRef.hostView as EmbeddedViewRef<any>).rootNodes[0] as HTMLElement
           windowEl.insertBefore(domElem, windowEl.firstChild)
           windowEl.classList.add('workbench-shell-active')
+          document.body.classList.add('workbench-shell-active')
         } catch (err) {
           console.error('[Workbench] Failed to mount WorkbenchSidebarComponent', err)
         }

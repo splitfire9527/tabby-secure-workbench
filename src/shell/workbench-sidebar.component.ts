@@ -65,7 +65,7 @@ export class WorkbenchSidebarComponent implements OnInit, OnDestroy {
     public app: AppService,
     private config: ConfigService,
     private zone: NgZone,
-    private cdr: ChangeDetectorRef,
+    @Optional() private cdr?: ChangeDetectorRef,
     @Optional() private profilesService?: ProfilesService,
     @Optional() private notifications?: NotificationsService
   ) {}
@@ -77,7 +77,7 @@ export class WorkbenchSidebarComponent implements OnInit, OnDestroy {
       this.app.tabsChanged$.subscribe(() => {
         this.zone.run(() => {
           this.updateActiveSessions()
-          this.cdr.markForCheck()
+          this.cdr?.markForCheck()
         })
       })
     )
@@ -86,7 +86,7 @@ export class WorkbenchSidebarComponent implements OnInit, OnDestroy {
       this.app.activeTabChange$.subscribe(tab => {
         this.zone.run(() => {
           this.activeProfile = (tab as any)?.profile || null
-          this.cdr.markForCheck()
+          this.cdr?.markForCheck()
         })
       })
     )
@@ -104,12 +104,12 @@ export class WorkbenchSidebarComponent implements OnInit, OnDestroy {
       this.activeView = tab
       this.isCollapsed = false
     }
-    this.cdr.markForCheck()
+    this.cdr?.markForCheck()
   }
 
   toggleCollapse(): void {
     this.isCollapsed = !this.isCollapsed
-    this.cdr.markForCheck()
+    this.cdr?.markForCheck()
   }
 
   async onSelectSession(sessionOrProfile: any): Promise<void> {

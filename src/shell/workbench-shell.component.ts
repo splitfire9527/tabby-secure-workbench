@@ -73,6 +73,57 @@ import { CrossTransferRelayService } from '../cross-transfer/cross-transfer-rela
                 <div class="spinner-border spinner-border-sm text-info mr-2" role="status"></div>
                 <span class="text-light small">Connecting to session...</span>
               </div>
+
+              <!-- SSH Pilot Welcome / Home View (when no terminal is active) -->
+              <div *ngIf="!embeddedTerminalTab && !isConnecting" class="workbench-home-screen d-flex flex-column align-items-center justify-content-center h-100 p-4">
+                
+                <!-- Quick Search Input Box -->
+                <div class="home-search-box-container w-100 mb-4" style="max-width: 540px;">
+                  <div class="home-search-box d-flex align-items-center px-3 py-2 rounded">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#7f848e" stroke-width="2" class="mr-2 flex-shrink-0">
+                      <circle cx="11" cy="11" r="8"></circle>
+                      <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                    <input
+                      type="text"
+                      class="home-search-input flex-grow-1"
+                      placeholder="连按两次 Shift 键以搜索连接、工具或输入 SSH 命令"
+                      [(ngModel)]="homeSearchQuery"
+                      (keyup.enter)="onHomeSearchSubmit()"
+                    />
+                  </div>
+                </div>
+
+                <!-- Recent Sessions List -->
+                <div class="home-recent-section w-100" style="max-width: 540px;">
+                  <div class="home-recent-title small text-muted mb-2 font-weight-bold">最近</div>
+                  <div class="home-recent-list">
+                    <div
+                      *ngFor="let p of recentProfiles"
+                      class="home-recent-item d-flex align-items-center justify-content-between p-2 rounded mb-1 cursor-pointer"
+                      (click)="launchProfile(p)"
+                    >
+                      <span class="font-weight-bold text-light">{{ p.name }}</span>
+                      <div class="d-flex align-items-center gap-2">
+                        <span class="text-muted font-mono small">{{ getProfileSubtitle(p) }}</span>
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#7f848e" stroke-width="2" class="info-icon">
+                          <circle cx="12" cy="12" r="10"></circle>
+                          <line x1="12" y1="16" x2="12" y2="12"></line>
+                          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Bottom Links -->
+                <div class="home-footer mt-auto pt-4 text-muted small text-center">
+                  <span>键盘快捷键</span>
+                  <span class="mx-2">&middot;</span>
+                  <span>在线文档</span>
+                </div>
+
+              </div>
             </div>
 
             <!-- SFTP+ Dual-Pane Overlay View -->
@@ -378,8 +429,63 @@ export class WorkbenchShellComponent extends BaseTabComponent implements OnInit,
   terminalRows = 36
   terminalCols = 118
 
+  homeSearchQuery = ''
+  recentProfiles: any[] = []
+
   private subs: Subscription[] = []
   private terminalSubs: Subscription[] = []
+
+  async loadRecentProfiles(): Promise<void> {
+    if (this.profilesService) {
+      try {
+        const profiles = await this.profilesService.getProfiles()
+        this.recentProfiles = (profiles || []).filter((p: any) => p.type !== 'workbench').slice(0, 6)
+      } catch {}
+    }
+  }
+
+  getProfileSubtitle(p: any): string {
+    if (!p) return ''
+    if (p.options?.host) {
+      return `${p.options.user || 'root'}@${p.options.host}`
+    }
+    if (p.options?.command) {
+      return p.options.command
+    }
+    return p.type || 'terminal'
+  }
+
+  async onHomeSearchSubmit(): Promise<void> {
+    const query = (this.homeSearchQuery || '').trim()
+    if (!query) return
+
+    const matched = this.recentProfiles.find(
+      p =>
+        p.name.toLowerCase().includes(query.toLowerCase()) ||
+        (p.options?.host && p.options.host.includes(query))
+    )
+    if (matched) {
+      await this.launchProfile(matched)
+      return
+    }
+
+    let user = 'root'
+    let host = query
+    let port = 22
+
+    if (host.includes('@')) {
+      const parts = host.split('@')
+      user = parts[0]
+      host = parts[1]
+    }
+    if (host.includes(':')) {
+      const parts = host.split(':')
+      host = parts[0]
+      port = parseInt(parts[1], 10) || 22
+    }
+
+    await this.onQuickConnect({ host, user, port })
+  }
 
   constructor(
     injector: Injector,
@@ -396,6 +502,7 @@ export class WorkbenchShellComponent extends BaseTabComponent implements OnInit,
 
   ngOnInit(): void {
     this.collectSessions()
+    this.loadRecentProfiles()
 
     // Real-time synchronization of open tabs across Tabby
     if (this.app.tabsChanged$) {
@@ -629,36 +736,20 @@ export class WorkbenchShellComponent extends BaseTabComponent implements OnInit,
   }
 
   private async autoLaunchInitialSession(): Promise<void> {
-    // 1. If an active SSH tab exists in Tabby, use its profile
+    if (this.activeProfile) {
+      await this.launchProfile(this.activeProfile)
+      return
+    }
+
+    // If an active SSH tab exists in Tabby, use its profile
     const activeLeaves = this.collectLeafTabs()
     const existingSsh = activeLeaves.find(
       t => t !== this && (t.session || t._session || t.sshSession) && t.profile
     )
     if (existingSsh?.profile) {
       await this.launchProfile(existingSsh.profile)
-      return
     }
-
-    // 2. Otherwise launch the first SSH profile from config
-    if (this.profilesService) {
-      try {
-        const profiles = await this.profilesService.getProfiles()
-        const sshProfile = (profiles || []).find(
-          (p: any) => p.type === 'ssh' || p.options?.host
-        )
-        if (sshProfile) {
-          await this.launchProfile(sshProfile)
-          return
-        }
-        // Fallback to any profile
-        const anyProfile = (profiles || []).find((p: any) => p.type !== 'workbench')
-        if (anyProfile) {
-          await this.launchProfile(anyProfile)
-        }
-      } catch (err) {
-        console.warn('[Workbench] Auto-launch initial session failed', err)
-      }
-    }
+    // If no session exists, stay on the SSH Pilot Welcome / Home View!
   }
 
   private collectLeafTabs(): any[] {

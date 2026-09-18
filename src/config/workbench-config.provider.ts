@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core'
 import { ConfigProvider } from 'tabby-core'
 import { DEFAULT_WORKBENCH_CONFIG } from './config.model'
+import { WorkbenchHostShellService } from '../shell/workbench-host-shell.service'
 
 /**
  * ConfigProvider for Tabby Secure Workbench.
@@ -13,4 +14,8 @@ export class WorkbenchConfigProvider extends ConfigProvider {
   }
 
   platformDefaults = {}
+
+  constructor(private hostShell: WorkbenchHostShellService) {
+    super()
+  }
 }

@@ -2,9 +2,11 @@ import { Injectable } from '@angular/core'
 import { ToolbarButtonProvider, ToolbarButton, AppService } from 'tabby-core'
 import { WorkbenchShellComponent } from './workbench-shell.component'
 
+import { WorkbenchHostShellService } from './workbench-host-shell.service'
+
 @Injectable()
 export class WorkbenchToolbarButtonProvider extends ToolbarButtonProvider {
-  constructor(private app: AppService) {
+  constructor(private app: AppService, private hostShell: WorkbenchHostShellService) {
     super()
   }
 
