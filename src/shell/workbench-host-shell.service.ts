@@ -23,7 +23,9 @@ export class WorkbenchHostShellService {
     private config: ConfigService,
     private zone: NgZone
   ) {
-    this.init()
+    this.app.ready$.subscribe(() => {
+      this.init()
+    })
   }
 
   private init(): void {
@@ -35,8 +37,7 @@ export class WorkbenchHostShellService {
 
     const tryMount = () => {
       const windowEl = (document.querySelector('app-root .window') ||
-        document.querySelector('.window') ||
-        document.querySelector('app-root')) as HTMLElement
+        document.querySelector('.window')) as HTMLElement
       if (!windowEl) return false
       if (document.querySelector('workbench-sidebar')) return true
 
@@ -44,6 +45,7 @@ export class WorkbenchHostShellService {
         try {
           const factory = this.resolver.resolveComponentFactory(WorkbenchSidebarComponent)
           this.sidebarRef = factory.create(this.injector)
+          this.sidebarRef.instance.cdr = this.sidebarRef.changeDetectorRef
           this.appRef.attachView(this.sidebarRef.hostView)
 
           const domElem = (this.sidebarRef.hostView as EmbeddedViewRef<any>).rootNodes[0] as HTMLElement

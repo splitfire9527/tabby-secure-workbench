@@ -77,6 +77,12 @@ describe('TransferStore Layer (§4.1 #2)', () => {
     expect(capturedSummary.succeeded).toBe(1)
     expect(capturedSummary.running).toBe(1)
     expect(capturedSummary.queued).toBe(1)
+
+    const syncSummary = store.getSummary()
+    expect(syncSummary.total).toBe(3)
+    expect(syncSummary.succeeded).toBe(1)
+    expect(syncSummary.running).toBe(1)
+    expect(syncSummary.queued).toBe(1)
   })
 
   it('should cancel running tasks and invoke handlers on destroy (tab close)', () => {

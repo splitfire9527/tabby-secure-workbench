@@ -145,6 +145,16 @@ export class WorkbenchTerminalDecorator extends TerminalDecorator {
         renderStatusContent(0, 0, 0)
         host.appendChild(statusEl)
 
+        statusEl.addEventListener('click', (ev) => {
+          const target = (ev.target as HTMLElement)?.closest?.('[data-action="toggle-dock"]')
+          if (target) {
+            ev.preventDefault()
+            ev.stopPropagation()
+            const summary = store.getSummary()
+            this.notifications.info(`传输队列 - 传输中: ${summary.running}, 完成: ${summary.succeeded}, 失败: ${summary.failed}`)
+          }
+        })
+
         // Listen to tab resizing
         if (tab.frontend?.resize$) {
           subs.push(

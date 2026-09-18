@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, NgZone, Optional, ChangeDetectorRef } from '@angular/core'
+import { Component, OnInit, OnDestroy, NgZone, Optional, ChangeDetectorRef, ApplicationRef } from '@angular/core'
 import { AppService, ConfigService, ProfilesService, NotificationsService } from 'tabby-core'
 import { Subscription } from 'rxjs'
 import { ActivityTab } from './workbench-activity-bar.component'
@@ -11,7 +11,7 @@ import { DirectoryPair } from '../sftp-plus/directory-pair.model'
       <!-- Activity Bar (48px) -->
       <workbench-activity-bar
         [activeTab]="activeView"
-        (tabChange)="onViewChange($event)"
+        (activeTabChange)="onViewChange($event)"
       ></workbench-activity-bar>
 
       <!-- Drawer (260px) -->
@@ -22,6 +22,7 @@ import { DirectoryPair } from '../sftp-plus/directory-pair.model'
         [activeTerminalTab]="app.activeTab"
         [activeProfile]="activeProfile"
         (selectSession)="onSelectSession($event)"
+        (connectProfile)="onSelectSession($event)"
         (quickConnect)="onQuickConnect($event)"
         (applyDirectoryPair)="onApplyDirectoryPair($event)"
         (closeDrawer)="toggleCollapse()"
@@ -43,7 +44,7 @@ import { DirectoryPair } from '../sftp-plus/directory-pair.model'
       display: flex;
       flex-direction: row;
       height: 100%;
-      width: 308px;
+      width: 348px;
       transition: width 0.15s ease;
       overflow: hidden;
       background: #21252b;
@@ -65,9 +66,10 @@ export class WorkbenchSidebarComponent implements OnInit, OnDestroy {
     public app: AppService,
     private config: ConfigService,
     private zone: NgZone,
-    @Optional() private cdr?: ChangeDetectorRef,
+    @Optional() public cdr?: ChangeDetectorRef,
     @Optional() private profilesService?: ProfilesService,
-    @Optional() private notifications?: NotificationsService
+    @Optional() private notifications?: NotificationsService,
+    @Optional() private appRef?: ApplicationRef
   ) {}
 
   ngOnInit(): void {
@@ -78,6 +80,7 @@ export class WorkbenchSidebarComponent implements OnInit, OnDestroy {
         this.zone.run(() => {
           this.updateActiveSessions()
           this.cdr?.markForCheck()
+          this.appRef?.tick()
         })
       })
     )
@@ -87,6 +90,7 @@ export class WorkbenchSidebarComponent implements OnInit, OnDestroy {
         this.zone.run(() => {
           this.activeProfile = (tab as any)?.profile || null
           this.cdr?.markForCheck()
+          this.appRef?.tick()
         })
       })
     )
@@ -104,12 +108,24 @@ export class WorkbenchSidebarComponent implements OnInit, OnDestroy {
       this.activeView = tab
       this.isCollapsed = false
     }
-    this.cdr?.markForCheck()
+    try {
+      this.cdr?.detectChanges()
+      this.cdr?.markForCheck()
+    } catch {}
+    try {
+      this.appRef?.tick()
+    } catch {}
   }
 
   toggleCollapse(): void {
     this.isCollapsed = !this.isCollapsed
-    this.cdr?.markForCheck()
+    try {
+      this.cdr?.detectChanges()
+      this.cdr?.markForCheck()
+    } catch {}
+    try {
+      this.appRef?.tick()
+    } catch {}
   }
 
   async onSelectSession(sessionOrProfile: any): Promise<void> {

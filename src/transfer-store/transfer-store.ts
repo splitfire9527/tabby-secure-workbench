@@ -41,6 +41,31 @@ export class TransferStore {
     return this.tasksSubject.value
   }
 
+  getSummary(): TransferSummary {
+    let queued = 0
+    let running = 0
+    let succeeded = 0
+    let failed = 0
+    let cancelled = 0
+
+    for (const t of this.tasksSubject.value) {
+      if (t.status === 'queued') queued++
+      else if (t.status === 'running') running++
+      else if (t.status === 'succeeded') succeeded++
+      else if (t.status === 'failed') failed++
+      else if (t.status === 'cancelled') cancelled++
+    }
+
+    return {
+      queued,
+      running,
+      succeeded,
+      failed,
+      cancelled,
+      total: this.tasksSubject.value.length,
+    }
+  }
+
   addTask(
     taskInit: Omit<TransferTask, 'status' | 'transferredBytes' | 'speedBytesPerSec'> & {
       status?: TransferStatus

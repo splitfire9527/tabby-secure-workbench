@@ -505,6 +505,86 @@ interface ProfileFolderGroup {
       .status-dot.offline {
         background: #e06c75;
       }
+      .session-card {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: stretch !important;
+        height: auto !important;
+        min-height: 40px !important;
+        padding: 5px 8px !important;
+        border-radius: 4px !important;
+        border: 1px solid transparent !important;
+        margin-bottom: 3px !important;
+        background: rgba(255, 255, 255, 0.02) !important;
+        cursor: pointer !important;
+        transition: background 0.15s ease, border-color 0.15s ease !important;
+
+        &:hover {
+          background: #282c34 !important;
+          border-color: #3e4451 !important;
+        }
+
+        &.selected {
+          background: #2c313a !important;
+          border-color: #4b5263 !important;
+        }
+
+        &.active {
+          border-color: rgba(190, 80, 70, 0.7) !important;
+          background: rgba(190, 80, 70, 0.2) !important;
+          color: #ffffff !important;
+
+          .tree-label {
+            color: #ffffff !important;
+          }
+          .session-subtitle {
+            color: #e5c07b !important;
+          }
+        }
+
+        .session-subtitle {
+          font-size: 10px !important;
+          color: #7f848e !important;
+          margin-top: 2px !important;
+          overflow: hidden !important;
+          text-overflow: ellipsis !important;
+          white-space: nowrap !important;
+        }
+
+        .badge-protocol {
+          font-size: 9px !important;
+          padding: 1px 4px !important;
+          border-radius: 3px !important;
+          background: rgba(190, 80, 70, 0.2) !important;
+          color: #e06c75 !important;
+          font-family: monospace !important;
+        }
+      }
+      .drawer-bottom-bar {
+        background: #181a1f !important;
+        border-top: 1px solid #282c34 !important;
+        min-height: 32px !important;
+        box-sizing: border-box !important;
+
+        .btn-mgr-tool-sm {
+          background: none !important;
+          border: none !important;
+          color: #abb2bf !important;
+          padding: 3px 5px !important;
+          border-radius: 3px !important;
+          cursor: pointer !important;
+
+          &:hover:not(:disabled) {
+            background: #282c34 !important;
+            color: #ffffff !important;
+          }
+
+          &:disabled {
+            opacity: 0.3 !important;
+            cursor: default !important;
+          }
+        }
+      }
       .active-session-item,
       .pair-item {
         background: rgba(255, 255, 255, 0.03);
