@@ -41,6 +41,9 @@ export class CrossTransferRelayService {
     if (!item) {
       throw new Error('Clipboard is empty. Please copy a remote file first.')
     }
+    if (!options.sourceClient || options.sourceClient.closed) {
+      throw new Error('Source connection is disconnected')
+    }
 
     const { sourceClient, targetClient, targetDirectory, targetStore } = options
     const targetPath = path.posix.join(targetDirectory, item.fileName)
@@ -48,19 +51,20 @@ export class CrossTransferRelayService {
 
     // Stage file path in local OS temp directory
     const baseTempDir = options.tempDir || os.tmpdir()
-    const tempFileName = `workbench-relay-${crypto.randomBytes(8).toString('hex')}.tmp`
+    const tempFileName = `workbench-relay-${crypto.randomBytes(8).toString('hex')}${item.isDirectory ? '' : '.tmp'}`
     const localTempPath = path.join(baseTempDir, tempFileName)
 
     let isCancelled = false
     const cleanupTempFile = () => {
       try {
-        if (fs.existsSync(localTempPath)) {
-          fs.unlinkSync(localTempPath)
-        }
+        if (!fs.existsSync(localTempPath)) return
+        const st = fs.statSync(localTempPath)
+        if (st.isDirectory()) fs.rmSync(localTempPath, { recursive: true, force: true })
+        else fs.unlinkSync(localTempPath)
       } catch {}
     }
 
-    const task = targetStore.addTask({
+    targetStore.addTask({
       id: taskId,
       name: `Cross-Copy: ${item.fileName}`,
       sourcePath: `${item.sourceSessionName}:${item.remotePath}`,
@@ -76,47 +80,42 @@ export class CrossTransferRelayService {
 
     try {
       targetStore.updateTaskStatus(taskId, 'running')
+      this.assertSourceOpen(sourceClient)
 
-      // Step A: Stage file from source host to local temp
-      await this.stageFromSource(sourceClient, item.remotePath, localTempPath, bytes => {
-        if (isCancelled) throw new Error('Transfer cancelled by user')
-        // Progress stage 1: 0% to 50%
-        const total = item.size || bytes
-        targetStore.updateProgress(taskId, Math.floor(bytes * 0.5))
-      })
-
-      if (isCancelled) {
-        throw new Error('Transfer cancelled by user')
-      }
-
-      // Step B: Upload from local temp to target host using OverwriteUploader
-      const localStats = fs.statSync(localTempPath)
-      const fileSize = localStats.size
-
-      await this.uploader.uploadWithAtomicOverwrite(
-        targetClient,
-        localTempPath,
-        targetPath,
-        {
+      let bytesTransferred = 0
+      if (item.isDirectory) {
+        fs.mkdirSync(localTempPath, { recursive: true, mode: 0o700 })
+        await this.stageDirectory(sourceClient, item.remotePath, localTempPath)
+        if (isCancelled || sourceClient.closed) throw new Error(isCancelled ? 'Transfer cancelled by user' : 'Source connection is disconnected')
+        bytesTransferred = await this.uploadStagedDirectory(targetClient, localTempPath, targetPath)
+      } else {
+        await this.stageFromSource(sourceClient, item.remotePath, localTempPath, bytes => {
+          if (isCancelled) throw new Error('Transfer cancelled by user')
+          if (sourceClient.closed) throw new Error('Source connection is disconnected')
+          const total = item.size || bytes
+          targetStore.updateProgress(taskId, Math.floor(bytes * 0.5))
+        })
+        if (isCancelled || sourceClient.closed) {
+          throw new Error(isCancelled ? 'Transfer cancelled by user' : 'Source connection is disconnected')
+        }
+        const fileSize = fs.statSync(localTempPath).size
+        await this.uploader.uploadWithAtomicOverwrite(targetClient, localTempPath, targetPath, {
           onProgress: bytes => {
             if (isCancelled) throw new Error('Transfer cancelled by user')
-            // Progress stage 2: 50% to 100%
-            targetStore.updateProgress(
-              taskId,
-              Math.floor(fileSize * 0.5 + bytes * 0.5)
-            )
+            targetStore.updateProgress(taskId, Math.floor(fileSize * 0.5 + bytes * 0.5))
           },
-        }
-      )
+        })
+        bytesTransferred = fileSize
+      }
 
-      targetStore.updateProgress(taskId, fileSize)
+      targetStore.updateProgress(taskId, bytesTransferred)
       targetStore.updateTaskStatus(taskId, 'succeeded')
 
       return {
         taskId,
         sourcePath: item.remotePath,
         targetPath,
-        bytesTransferred: fileSize,
+        bytesTransferred,
       }
     } catch (err: any) {
       const errorMsg = err.message || 'Cross-connection transfer failed'
@@ -135,15 +134,77 @@ export class CrossTransferRelayService {
    * Helper to download remote file to local staging file.
    * Supports standard ssh2/sftp client methods or custom stream.
    */
+  private assertSourceOpen(client: any): void {
+    if (!client || client.closed) throw new Error('Source connection is disconnected')
+  }
+
+  private async stageDirectory(client: any, remotePath: string, localDir: string): Promise<void> {
+    this.assertSourceOpen(client)
+    fs.mkdirSync(localDir, { recursive: true, mode: 0o700 })
+    const entries = await this.listRemote(client, remotePath)
+    for (const entry of entries) {
+      if (entry.name === '.' || entry.name === '..') continue
+      this.assertSourceOpen(client)
+      const remoteChild = path.posix.join(remotePath, entry.name)
+      const localChild = path.join(localDir, entry.name)
+      if (entry.isDirectory) await this.stageDirectory(client, remoteChild, localChild)
+      else await this.stageFromSource(client, remoteChild, localChild)
+    }
+  }
+
+  private async listRemote(client: any, remotePath: string): Promise<{ name: string; isDirectory: boolean }[]> {
+    if (typeof client.readdir !== 'function') {
+      throw new Error('Source client cannot list directories')
+    }
+    const entries = await client.readdir(remotePath)
+    return (entries || []).map((entry: any) => {
+      const name = entry.filename || entry.name
+      const isDirectory =
+        typeof entry.isDirectory === 'function'
+          ? entry.isDirectory()
+          : !!entry.isDirectory ||
+            (entry.attrs
+              ? typeof entry.attrs.isDirectory === 'function'
+                ? entry.attrs.isDirectory()
+                : !!entry.attrs.isDirectory
+              : false)
+      return { name, isDirectory }
+    })
+  }
+
+  private async uploadStagedDirectory(
+    client: RemoteSftpClient,
+    localDir: string,
+    remoteDir: string
+  ): Promise<number> {
+    if (typeof client.mkdir === 'function') {
+      try {
+        await client.mkdir(remoteDir)
+      } catch {
+        // The directory may already exist.
+      }
+    }
+    let bytes = 0
+    for (const entry of fs.readdirSync(localDir, { withFileTypes: true })) {
+      const localChild = path.join(localDir, entry.name)
+      const remoteChild = path.posix.join(remoteDir, entry.name)
+      if (entry.isDirectory()) {
+        bytes += await this.uploadStagedDirectory(client, localChild, remoteChild)
+      } else {
+        const result = await this.uploader.uploadWithAtomicOverwrite(client, localChild, remoteChild)
+        bytes += result.bytesUploaded
+      }
+    }
+    return bytes
+  }
+
   private async stageFromSource(
     client: any,
     remotePath: string,
     localTempPath: string,
     onProgress?: (bytes: number) => void
   ): Promise<void> {
-    if (!client) {
-      throw new Error('Source connection is disconnected')
-    }
+    this.assertSourceOpen(client)
 
     if (typeof client.downloadFile === 'function') {
       return client.downloadFile(remotePath, localTempPath, onProgress)

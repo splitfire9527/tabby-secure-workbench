@@ -67,6 +67,12 @@ export class TabRecoveryProvider {
   }
 }
 
+export class ProfilesService {
+  getConfigProxyForProfile(profile: any): any {
+    return profile
+  }
+}
+
 export class HotkeyProvider {
   async provide(): Promise<any[]> {
     return []

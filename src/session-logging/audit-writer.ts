@@ -48,16 +48,20 @@ export class AuditWriter {
   /**
    * Sanitizes objects to prevent leaking secrets, credentials, or keys.
    */
-  private sanitizeDetails(details: Record<string, any>): Record<string, any> {
-    const sanitized: Record<string, any> = {}
+  private sanitizeDetails(details: Record<string, any>, seen = new WeakSet()): Record<string, any> {
+    if (typeof details !== 'object' || details === null) return details
+    if (seen.has(details)) return '[CIRCULAR]' as any
+    seen.add(details)
+
+    const sanitized: Record<string, any> = Array.isArray(details) ? [] : {}
     const sensitiveKeys = ['password', 'secret', 'key', 'privatekey', 'passphrase', 'token', 'auth']
 
-    for (const [k, v] of Object.entries(details || {})) {
+    for (const [k, v] of Object.entries(details)) {
       const lower = k.toLowerCase()
       if (sensitiveKeys.some(s => lower.includes(s))) {
         sanitized[k] = '[REDACTED]'
       } else if (typeof v === 'object' && v !== null) {
-        sanitized[k] = this.sanitizeDetails(v)
+        sanitized[k] = this.sanitizeDetails(v, seen)
       } else {
         sanitized[k] = v
       }

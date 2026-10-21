@@ -1,8 +1,11 @@
 import * as fs from 'fs'
 import * as path from 'path'
+import * as os from 'os'
 import { LoggingConfig } from '../config/config.model'
+import { SecureCrtLogOptions } from './session-log-options.model'
 import { resolveLogFilename, LogTemplateVariables } from './log-template'
 import { AuditWriter } from './audit-writer'
+import { VisibleTextFilter } from './visible-text-filter'
 
 /**
  * Strips ANSI/OSC escape sequences while preserving exact displayable text characters.
@@ -31,22 +34,31 @@ export function formatTimestamp(date: Date = new Date()): string {
   return `[${y}-${m}-${d} ${h}:${min}:${s}]`
 }
 
+export type LoggerConfigInput = any
+
 /**
  * SessionLogger handles recording terminal sessions to disk with line-buffered
  * transcript output, optional timestamps, raw bytes diagnostics, and size rotation.
+ * Fully supports SecureCRT Session Options - Log File specification.
  */
 export class SessionLogger {
   private transcriptStream: fs.WriteStream | null = null
   private rawStream: fs.WriteStream | null = null
   private auditWriter: AuditWriter | null = null
   private lineBuffer = ''
+  private visibleFilter = new VisibleTextFilter()
   private currentBytesWritten = 0
+  private fileModeLocked = false
   private fullLogPath = ''
+  private initialDay = new Date().getDate()
+
+  readonly options: LoggerConfigInput
 
   constructor(
-    readonly config: LoggingConfig,
+    config: LoggerConfigInput,
     readonly sessionMeta: { id: string; name: string; host?: string }
   ) {
+    this.options = { ...config }
     this.initStreams()
   }
 
@@ -55,45 +67,92 @@ export class SessionLogger {
   }
 
   private initStreams(): void {
-    if (!this.config.directory) return
-
-    if (!fs.existsSync(this.config.directory)) {
-      fs.mkdirSync(this.config.directory, { recursive: true, mode: 0o700 })
+    let targetDir = (this.options as LoggingConfig).directory
+    if (!targetDir) {
+      targetDir = path.join(os.homedir(), '.tabby-logs')
     }
 
-    const filename = resolveLogFilename(this.config.filenameTemplate, {
+    if (!fs.existsSync(targetDir)) {
+      try {
+        fs.mkdirSync(targetDir, { recursive: true, mode: 0o700 })
+      } catch (err) {
+        console.error('[SessionLogger] Failed to create log directory:', err)
+      }
+    }
+
+    const rawTemplate =
+      (this.options as SecureCrtLogOptions).logFileName ||
+      (this.options as LoggingConfig).filenameTemplate ||
+      '%H_%S_%Y%M%D_%h%m%s.log'
+
+    const filename = resolveLogFilename(rawTemplate, {
       host: this.sessionMeta.host,
       sessionName: this.sessionMeta.name,
       date: new Date(),
     })
 
-    this.fullLogPath = path.join(this.config.directory, filename)
-    const flags = this.config.appendMode === 'append' ? 'a' : 'w'
+    this.fullLogPath = path.isAbsolute(rawTemplate)
+      ? path.join(path.dirname(rawTemplate), filename)
+      : path.join(targetDir, filename)
+    this.fileModeLocked = false
 
-    if (this.config.mode === 'transcript' || this.config.mode === 'audit') {
+    // Append vs Overwrite
+    const isOverwrite =
+      (this.options as SecureCrtLogOptions).mode === 'overwrite' ||
+      (this.options as LoggingConfig).appendMode === 'overwrite'
+    const flags = isOverwrite ? 'w' : 'a'
+
+    // Open transcript stream
+    try {
       this.transcriptStream = fs.createWriteStream(this.fullLogPath, {
         flags,
         mode: 0o600,
         encoding: 'utf-8',
       })
-      this.transcriptStream.on('error', () => {})
-    }
-
-    if (this.config.mode === 'raw') {
-      const rawPath = this.fullLogPath + '.raw'
-      this.rawStream = fs.createWriteStream(rawPath, {
-        flags,
-        mode: 0o600,
+      this.transcriptStream.on('error', (err) => {
+        console.error('[SessionLogger] Transcript stream error:', err)
       })
-      this.rawStream.on('error', () => {})
+      this.fileModeLocked = true
+
+      // Custom log data: Upon connect
+      const uponConnect = (this.options as SecureCrtLogOptions).customLogData?.uponConnect
+      if (uponConnect) {
+        this.transcriptStream.write(`${uponConnect}\n`)
+      }
+    } catch (err) {
+      console.error('[SessionLogger] Failed to create transcript stream:', err)
     }
 
-    const auditPath = path.join(this.config.directory, `${this.sessionMeta.id}-audit.jsonl`)
-    this.auditWriter = new AuditWriter(auditPath)
-    this.auditWriter.writeEvent('session-connected', this.sessionMeta.id, this.sessionMeta.name, {
-      host: this.sessionMeta.host,
-      logFile: this.fullLogPath,
-    })
+    // Raw mode stream
+    const isRaw =
+      !!(this.options as SecureCrtLogOptions).rawLog ||
+      (this.options as LoggingConfig).mode === 'raw'
+
+    if (isRaw) {
+      try {
+        const rawPath = this.fullLogPath + '.raw'
+        this.rawStream = fs.createWriteStream(rawPath, {
+          flags,
+          mode: 0o600,
+        })
+        this.rawStream.on('error', () => {})
+      } catch (err) {
+        console.error('[SessionLogger] Failed to create raw stream:', err)
+      }
+    }
+
+    // Audit log
+    try {
+      const auditDir = path.dirname(this.fullLogPath)
+      const auditPath = path.join(auditDir, `${this.sessionMeta.id}-audit.jsonl`)
+      this.auditWriter = new AuditWriter(auditPath)
+      this.auditWriter.writeEvent('session-connected', this.sessionMeta.id, this.sessionMeta.name, {
+        host: this.sessionMeta.host,
+        logFile: this.fullLogPath,
+      })
+    } catch (err) {
+      console.error('[SessionLogger] Failed to init audit writer:', err)
+    }
   }
 
   /**
@@ -103,8 +162,14 @@ export class SessionLogger {
   writeText(text: string): void {
     if (!this.transcriptStream) return
 
-    // Feed text into line buffer
-    this.lineBuffer += text
+    // If configured to log only custom data, skip general terminal text
+    if ((this.options as SecureCrtLogOptions).customLogData?.logOnlyCustomData) {
+      return
+    }
+
+    const visible = this.visibleFilter.push(text)
+    if (!visible) return
+    this.lineBuffer += visible
 
     // Check for complete lines separated by \n or \r\n
     const lines = this.lineBuffer.split(/\r?\n/)
@@ -112,14 +177,24 @@ export class SessionLogger {
       // The last element is the remaining incomplete line segment
       const incomplete = lines.pop() ?? ''
 
-      for (const line of lines) {
-        const cleanLine = stripAnsiEscapeSequences(line)
-        const lineWithTs = this.config.includeTimestamps
-          ? `${formatTimestamp()} ${cleanLine}\n`
-          : `${cleanLine}\n`
+      const includeTs =
+        !!(this.options as SecureCrtLogOptions).timestampEachLine ||
+        !!(this.options as LoggingConfig).includeTimestamps
+      const onEachLine = (this.options as SecureCrtLogOptions).customLogData?.onEachLine || ''
 
-        this.transcriptStream.write(lineWithTs)
-        this.currentBytesWritten += Buffer.byteLength(lineWithTs, 'utf-8')
+      for (const line of lines) {
+        const cleanLine = line
+        let formattedLine = ''
+        if (includeTs) {
+          formattedLine += `${formatTimestamp()} `
+        }
+        if (onEachLine) {
+          formattedLine += `${onEachLine} `
+        }
+        formattedLine += `${cleanLine}\n`
+
+        this.transcriptStream.write(formattedLine)
+        this.currentBytesWritten += Buffer.byteLength(formattedLine, 'utf-8')
       }
 
       this.lineBuffer = incomplete
@@ -139,28 +214,70 @@ export class SessionLogger {
   /**
    * Flushes any remaining incomplete line in lineBuffer.
    */
-  flush(): void {
-    if (this.transcriptStream && this.lineBuffer.length > 0) {
-      const cleanLine = stripAnsiEscapeSequences(this.lineBuffer)
-      const lineWithTs = this.config.includeTimestamps
-        ? `${formatTimestamp()} ${cleanLine}\n`
-        : `${cleanLine}\n`
+  /**
+   * Append/overwrite is fixed once the file is open. Returns false when ignored.
+   */
+  setFileExistMode(mode: 'append' | 'overwrite'): boolean {
+    if (this.fileModeLocked || this.transcriptStream) return false
+    ;(this.options as LoggingConfig).appendMode = mode
+    ;(this.options as SecureCrtLogOptions).mode = mode
+    return true
+  }
 
-      this.transcriptStream.write(lineWithTs)
+  flush(): void {
+    const tail = this.visibleFilter.flush()
+    if (tail) this.lineBuffer += tail
+    if (this.transcriptStream && this.lineBuffer.length > 0) {
+      if (!(this.options as SecureCrtLogOptions).customLogData?.logOnlyCustomData) {
+        const cleanLine = this.lineBuffer
+        const includeTs =
+          !!(this.options as SecureCrtLogOptions).timestampEachLine ||
+          !!(this.options as LoggingConfig).includeTimestamps
+        const onEachLine = (this.options as SecureCrtLogOptions).customLogData?.onEachLine || ''
+
+        let formattedLine = ''
+        if (includeTs) {
+          formattedLine += `${formatTimestamp()} `
+        }
+        if (onEachLine) {
+          formattedLine += `${onEachLine} `
+        }
+        formattedLine += `${cleanLine}\n`
+
+        this.transcriptStream.write(formattedLine)
+      }
       this.lineBuffer = ''
     }
   }
 
   private checkRotation(): void {
-    if (!this.config.maxFileSizeMB || this.config.maxFileSizeMB <= 0) return
+    // 1. Midnight rotation check (SecureCRT: Start new log at midnight)
+    if ((this.options as SecureCrtLogOptions).startNewLogAtMidnight) {
+      const nowDay = new Date().getDate()
+      if (nowDay !== this.initialDay) {
+        this.initialDay = nowDay
+        this.flush()
+        if (this.transcriptStream) this.transcriptStream.end()
+        if (this.rawStream) this.rawStream.end()
+        this.currentBytesWritten = 0
+        this.initStreams()
+        return
+      }
+    }
 
-    const maxBytes = this.config.maxFileSizeMB * 1024 * 1024
+    // 2. Size rotation check
+    const maxMb = (this.options as LoggingConfig).maxFileSizeMB
+    if (!maxMb || maxMb <= 0) return
+
+    const maxBytes = maxMb * 1024 * 1024
     if (this.currentBytesWritten >= maxBytes) {
       this.flush()
       if (this.transcriptStream) {
         this.transcriptStream.end()
       }
-      // Re-init with new timestamped filename
+      if (this.rawStream) {
+        this.rawStream.end()
+      }
       this.currentBytesWritten = 0
       this.initStreams()
     }
@@ -173,18 +290,24 @@ export class SessionLogger {
   async close(): Promise<void> {
     this.flush()
 
+    // Custom log data: Upon disconnect
+    const uponDisconnect = (this.options as SecureCrtLogOptions).customLogData?.uponDisconnect
+    if (this.transcriptStream && uponDisconnect) {
+      this.transcriptStream.write(`${uponDisconnect}\n`)
+    }
+
     const promises: Promise<void>[] = []
 
     if (this.transcriptStream) {
       const ts = this.transcriptStream
       this.transcriptStream = null
-      promises.push(new Promise(resolve => ts.end(() => resolve())))
+      promises.push(new Promise((resolve) => ts.end(() => resolve())))
     }
 
     if (this.rawStream) {
       const rs = this.rawStream
       this.rawStream = null
-      promises.push(new Promise(resolve => rs.end(() => resolve())))
+      promises.push(new Promise((resolve) => rs.end(() => resolve())))
     }
 
     if (this.auditWriter) {

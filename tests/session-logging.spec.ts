@@ -5,10 +5,7 @@ import {
   resolveLogFilename,
   sanitizeFilenameComponent,
 } from '../src/session-logging/log-template'
-import {
-  stripAnsiEscapeSequences,
-  SessionLogger,
-} from '../src/session-logging/session-logger'
+import { SessionLogger } from '../src/session-logging/session-logger'
 import { AuditWriter } from '../src/session-logging/audit-writer'
 
 describe('Session Logging Layer (§6)', () => {
@@ -42,15 +39,98 @@ describe('Session Logging Layer (§6)', () => {
     })
   })
 
-  describe('ANSI Escape Sequence Stripping', () => {
-    it('should strip CSI color and cursor codes while keeping visible text', () => {
-      const colored = '\x1b[31;1mERROR:\x1b[0m Failed to connect to \x1b[34mhost\x1b[0m'
-      expect(stripAnsiEscapeSequences(colored)).toBe('ERROR: Failed to connect to host')
+  describe('Split control sequences stay out of the transcript', () => {
+    let tempDir: string
+
+    beforeEach(() => {
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'workbench-log-split-'))
     })
 
-    it('should strip OSC window title codes', () => {
-      const osc = '\x1b]0;Tab Title\x07Visible text on screen'
-      expect(stripAnsiEscapeSequences(osc)).toBe('Visible text on screen')
+    afterEach(() => {
+      if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true })
+    })
+
+    it('drops a CSI sequence that arrives in two chunks and keeps the visible text', async () => {
+      const logger = new SessionLogger(
+        {
+          enabled: true,
+          directory: tempDir,
+          filenameTemplate: 'split.log',
+          mode: 'transcript',
+          appendMode: 'append',
+          includeTimestamps: false,
+        },
+        { id: 'split-1', name: 'split' }
+      )
+
+      logger.writeText('\x1b[31')
+      logger.writeText('mHELLO\x1b[0m\n')
+      logger.flush()
+      await logger.close()
+
+      const content = fs.readFileSync(logger.logFilePath, 'utf-8')
+      expect(content).toContain('HELLO')
+      expect(content).not.toContain('\x1b')
+      expect(content).not.toContain('[31')
+    })
+
+    it('does not create a raw byte file unless raw diagnosis is enabled', async () => {
+      const logger = new SessionLogger(
+        {
+          enabled: true,
+          directory: tempDir,
+          filenameTemplate: 'plain.log',
+          mode: 'transcript',
+          appendMode: 'append',
+          includeTimestamps: false,
+        },
+        { id: 'raw-off', name: 'raw-off' }
+      )
+      logger.writeText('visible only\n')
+      await logger.close()
+      expect(fs.existsSync(logger.logFilePath + '.raw')).toBe(false)
+      expect(fs.readFileSync(logger.logFilePath, 'utf-8')).toContain('visible only')
+    })
+
+    it('writes raw bytes to a separate file when raw diagnosis is on', async () => {
+      const logger = new SessionLogger(
+        {
+          enabled: true,
+          directory: tempDir,
+          filenameTemplate: 'raw.log',
+          mode: 'raw',
+          appendMode: 'append',
+          includeTimestamps: false,
+        },
+        { id: 'raw-on', name: 'raw-on' }
+      )
+      logger.writeText('visible\n')
+      logger.writeRawBytes(Buffer.from([0x1b, 0x5b, 0x33, 0x31, 0x6d]))
+      await logger.close()
+      const raw = fs.readFileSync(logger.logFilePath + '.raw')
+      expect(raw[0]).toBe(0x1b)
+      expect(fs.readFileSync(logger.logFilePath, 'utf-8')).not.toContain('\x1b')
+    })
+
+    it('refuses to switch append or overwrite after the log file is open', async () => {
+      const logger = new SessionLogger(
+        {
+          enabled: true,
+          directory: tempDir,
+          filenameTemplate: 'mode.log',
+          mode: 'transcript',
+          appendMode: 'append',
+          includeTimestamps: false,
+        },
+        { id: 'mode-1', name: 'mode' }
+      )
+      logger.writeText('one\n')
+      expect(logger.setFileExistMode('overwrite')).toBe(false)
+      logger.writeText('two\n')
+      await logger.close()
+      const content = fs.readFileSync(logger.logFilePath, 'utf-8')
+      expect(content).toContain('one')
+      expect(content).toContain('two')
     })
   })
 

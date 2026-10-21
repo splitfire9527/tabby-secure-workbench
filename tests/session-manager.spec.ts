@@ -102,4 +102,116 @@ describe('SecureCRT Session Manager Drawer', () => {
     const tooltip = drawer.getProfileTooltip(sampleProfiles[1])
     expect(tooltip).toBe('192.168.1.110 (yangguangjian@192.168.1.110:9999)')
   })
+
+  it('should deduplicate host in primary and secondary text', () => {
+    // When name is remark:
+    expect(drawer.getProfilePrimaryName(sampleProfiles[3])).toBe('Gateway-Router')
+    expect(drawer.getProfileSecondaryText(sampleProfiles[3])).toBe('admin@10.0.0.1')
+
+    // When name is host:
+    expect(drawer.getProfilePrimaryName(sampleProfiles[1])).toBe('192.168.1.110')
+    expect(drawer.getProfileSecondaryText(sampleProfiles[1])).toBe('yangguangjian')
+
+    // Standard port 22 with host name:
+    expect(drawer.getProfilePrimaryName(sampleProfiles[0])).toBe('127.0.0.1')
+    expect(drawer.getProfileSecondaryText(sampleProfiles[0])).toBe('splitfire')
+  })
+
+  it('should hide protocol badge for standard port 22 SSH and show for non-standard or other types', () => {
+    // Standard SSH port 22 -> null (hidden)
+    expect(drawer.getProfileTypeBadge(sampleProfiles[0])).toBeNull()
+    expect(drawer.getProfileTypeBadge(sampleProfiles[2])).toBeNull()
+
+    // Non-standard port 9999 -> :9999
+    expect(drawer.getProfileTypeBadge(sampleProfiles[1])).toBe(':9999')
+
+    // Serial -> SERIAL
+    expect(drawer.getProfileTypeBadge({ type: 'serial', options: {} })).toBe('SERIAL')
+  })
+
+  it('should translate Imported from .ssh/config to Chinese', () => {
+    expect(drawer.getGroupDisplayName('Imported from .ssh/config')).toBe('SSH 配置导入')
+    expect(drawer.getGroupDisplayName('Lab Servers')).toBe('Lab Servers')
+  })
+
+  it('should map protocol icons to Tabby style icons', () => {
+    expect(drawer.getProfileIconClass({ type: 'ssh', options: { host: '1.2.3.4' } })).toBe('fas fa-desktop')
+    expect(drawer.getProfileIconClass({ type: 'serial', options: {} })).toBe('fas fa-microchip')
+    expect(drawer.getProfileIconClass({ type: 'telnet', options: {} })).toBe('fas fa-sitemap')
+    expect(drawer.getProfileIconClass({ type: 'local', options: {} })).toBe('fas fa-terminal')
+    expect(drawer.getProfileIconClass({ options: { host: '192.168.1.1' } })).toBe('fas fa-desktop')
+  })
+
+  it('should identify SSH profiles for hover SFTP button', () => {
+    expect(drawer.isSshProfile({ type: 'ssh', options: {} })).toBe(true)
+    expect(drawer.isSshProfile({ options: { host: '1.2.3.4' } })).toBe(true)
+    expect(drawer.isSshProfile({ type: 'serial', options: {} })).toBe(false)
+    expect(drawer.isSshProfile({ type: 'local', options: {} })).toBe(false)
+  })
+
+  it('should handle hideSavedRootWhenSole and isOnlySavedRoot correctly', () => {
+    // Only saved profiles present, no imported, no builtin
+    drawer.showImportedSessions = true
+    drawer.showBuiltinSessions = false
+    drawer.hideSavedRootWhenSole = false
+    expect(drawer.isOnlySavedRoot).toBe(true)
+    expect(drawer.shouldHideSavedRoot).toBe(false)
+
+    // User enables hideSavedRootWhenSole
+    drawer.hideSavedRootWhenSole = true
+    expect(drawer.shouldHideSavedRoot).toBe(true)
+
+    // If imported sessions exist and showImportedSessions is true:
+    drawer.savedProfiles.push({ id: 'imported:1', name: 'Imported Host', isImported: true })
+    expect(drawer.isOnlySavedRoot).toBe(false)
+    expect(drawer.shouldHideSavedRoot).toBe(false)
+
+    // If user hides imported sessions:
+    drawer.showImportedSessions = false
+    expect(drawer.isOnlySavedRoot).toBe(true)
+    expect(drawer.shouldHideSavedRoot).toBe(true)
+  })
+
+  it('should provide trackBy functions for stable DOM reconciliation', () => {
+    expect(drawer.trackByGroupName(0, { name: '运维网关', profiles: [], expanded: true })).toBe('运维网关')
+    expect(drawer.trackByProfileId(0, { id: 'workbench:123', name: 'pi' })).toBe('workbench:123')
+    expect(drawer.trackByProfileId(1, { name: 'unnamed-session' })).toBe('unnamed-session')
+  })
+
+  it('should cache filteredData to prevent Angular Zone.js recreation and flicker', () => {
+    const data1 = drawer.savedFilteredData
+    const data2 = drawer.savedFilteredData
+    expect(data1).toBe(data2) // Same object reference
+
+    drawer.sessionFilter = '127'
+    const data3 = drawer.savedFilteredData
+    expect(data3).not.toBe(data1)
+    expect(drawer.savedFilteredData).toBe(data3) // Cached under new query
+  })
+
+  it('should auto-normalize missing type to ssh when options.host is present', async () => {
+    const rawPi = {
+      id: 'workbench:pi',
+      name: 'pi',
+      group: '运维网关',
+      options: { host: '192.168.22.12', port: 22, user: 'root' },
+    }
+    mockProfilesService.getProfiles.mockResolvedValue([rawPi])
+    await drawer.loadProfiles()
+
+    expect(drawer.savedProfiles[0].type).toBe('ssh')
+
+    // Test onSelectProfile
+    const profileNoType: any = { options: { host: '192.168.1.1' } }
+    drawer.onSelectProfile(profileNoType)
+    expect(profileNoType.type).toBe('ssh')
+
+    // Test onConnectProfile
+    const profileNoType2: any = { id: 'p-test', options: { host: '192.168.1.2' } }
+    let emitted: any = null
+    drawer.connectProfile.subscribe(p => emitted = p)
+    drawer.onConnectProfile(profileNoType2)
+    expect(profileNoType2.type).toBe('ssh')
+    expect(emitted?.type).toBe('ssh')
+  })
 })

@@ -1,6 +1,7 @@
-import { NgModule, Injectable, Optional } from '@angular/core'
+import { NgModule, Injectable, Optional, OnDestroy } from '@angular/core'
 import { CommonModule } from '@angular/common'
 import { FormsModule } from '@angular/forms'
+import { Subscription } from 'rxjs'
 import TabbyCoreModule, {
   ConfigProvider,
   ToolbarButtonProvider,
@@ -8,12 +9,15 @@ import TabbyCoreModule, {
   TabRecoveryProvider,
   HotkeyProvider,
   ConfigService,
+  PlatformService,
 } from 'tabby-core'
 import { SettingsTabProvider } from 'tabby-settings'
 import { TerminalDecorator, TerminalColorSchemeProvider } from 'tabby-terminal'
 
 // Config
 import { WorkbenchConfigProvider } from './config/workbench-config.provider'
+import { TabContextMenuConfig } from './config/config.model'
+import { applyNativeSftpVisibility, NATIVE_SFTP_ATTR } from './shell/native-sftp-visibility'
 
 // Themes
 import { SecureCrtColorSchemeProvider } from './themes/securecrt-classic'
@@ -60,30 +64,38 @@ import {
  * without using brittle DOM manipulation.
  */
 @Injectable({ providedIn: 'root' })
-export class NativeSftpHideService {
+export class NativeSftpHideService implements OnDestroy {
   private styleEl: HTMLStyleElement | null = null
+  private configSub?: Subscription
 
   constructor(@Optional() private config?: ConfigService) {
     this.applyRule()
     if (this.config?.changed$) {
-      this.config.changed$.subscribe(() => {
+      this.configSub = this.config.changed$.subscribe(() => {
         this.applyRule()
       })
     }
   }
 
+  ngOnDestroy(): void {
+    if (this.configSub) {
+      this.configSub.unsubscribe()
+      this.configSub = undefined
+    }
+    if (this.styleEl) {
+      this.styleEl.remove()
+      this.styleEl = null
+    }
+  }
+
   applyRule(): void {
     const shouldHide = !!this.config?.store?.secureWorkbench?.hideNativeSFTPButton
-    if (shouldHide) {
+    const result = applyNativeSftpVisibility(document, shouldHide)
+    if (shouldHide && result.recognized) {
       if (!this.styleEl) {
         this.styleEl = document.createElement('style')
         this.styleEl.setAttribute('data-workbench-hide-native-sftp', '1')
-        this.styleEl.textContent = `
-          button[data-tabby-sftp-ui-button],
-          button[title="SFTP" i] {
-            display: none !important;
-          }
-        `
+        this.styleEl.textContent = `button[${NATIVE_SFTP_ATTR}="1"] { display: none !important; }`
         document.head.appendChild(this.styleEl)
       }
     } else {
@@ -95,7 +107,22 @@ export class NativeSftpHideService {
   }
 }
 
+import { TabContextMenuFilterService } from './shell/tab-context-menu-filter.service'
+export { TabContextMenuFilterService } from './shell/tab-context-menu-filter.service'
+
 import { WorkbenchSftpPaneComponent } from './shell/workbench-sftp-pane.component'
+import { WorkbenchGlobalTitleBarComponent } from './shell/workbench-global-title-bar.component'
+import { SessionLogDialogComponent } from './session-logging/session-log-dialog.component'
+import { WorkbenchModalsComponent } from './shell/workbench-modals.component'
+import { WorkbenchWelcomeComponent } from './shell/workbench-welcome.component'
+import { WorkbenchHomeTabComponent } from './shell/workbench-home-tab.component'
+import { WorkbenchSessionOptionsModalComponent } from './shell/workbench-session-options-modal.component'
+import { WorkbenchTabBarToolsComponent } from './shell/workbench-tab-bar-tools.component'
+import { WorkbenchNewSessionModalComponent } from './shell/workbench-new-session-modal.component'
+import { WorkbenchQuickSearchModalComponent } from './shell/workbench-quick-search-modal.component'
+import { WorkbenchDialogService } from './shell/workbench-dialog.service'
+import { WorkbenchSessionConfigService } from './config/workbench-session-config.service'
+import { WorkbenchTabGroupService } from './shell/workbench-tab-group.service'
 
 @NgModule({
   imports: [CommonModule, FormsModule, TabbyCoreModule],
@@ -110,6 +137,15 @@ import { WorkbenchSftpPaneComponent } from './shell/workbench-sftp-pane.componen
     WorkbenchSftpPaneComponent,
     CommandLibraryComponent,
     WorkbenchSettingsTabComponent,
+    WorkbenchGlobalTitleBarComponent,
+    SessionLogDialogComponent,
+    WorkbenchModalsComponent,
+    WorkbenchWelcomeComponent,
+    WorkbenchHomeTabComponent,
+    WorkbenchSessionOptionsModalComponent,
+    WorkbenchTabBarToolsComponent,
+    WorkbenchNewSessionModalComponent,
+    WorkbenchQuickSearchModalComponent,
   ],
   entryComponents: [
     WorkbenchShellComponent,
@@ -119,6 +155,15 @@ import { WorkbenchSftpPaneComponent } from './shell/workbench-sftp-pane.componen
     WorkbenchBottomDockComponent,
     WorkbenchSftpPaneComponent,
     WorkbenchSettingsTabComponent,
+    WorkbenchGlobalTitleBarComponent,
+    SessionLogDialogComponent,
+    WorkbenchModalsComponent,
+    WorkbenchWelcomeComponent,
+    WorkbenchHomeTabComponent,
+    WorkbenchSessionOptionsModalComponent,
+    WorkbenchTabBarToolsComponent,
+    WorkbenchNewSessionModalComponent,
+    WorkbenchQuickSearchModalComponent,
   ],
   providers: [
     { provide: ConfigProvider, useClass: WorkbenchConfigProvider, multi: true },
@@ -139,10 +184,19 @@ import { WorkbenchSftpPaneComponent } from './shell/workbench-sftp-pane.componen
     CommandService,
     NativeSftpHideService,
     WorkbenchHostShellService,
+    WorkbenchDialogService,
+    WorkbenchSessionConfigService,
+    TabContextMenuFilterService,
+    WorkbenchTabGroupService,
   ],
 })
 export default class TabbySecureWorkbenchModule {
-  constructor(hideService: NativeSftpHideService, hostShell: WorkbenchHostShellService) {
+  constructor(
+    hideService: NativeSftpHideService,
+    hostShell: WorkbenchHostShellService,
+    tabContextMenuFilter: TabContextMenuFilterService,
+    tabGroupService: WorkbenchTabGroupService
+  ) {
     // Initialized on module startup
   }
 }

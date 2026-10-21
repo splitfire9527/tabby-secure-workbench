@@ -1,11 +1,13 @@
+import { Injectable } from '@angular/core'
 import { BehaviorSubject, Observable } from 'rxjs'
 import { map } from 'rxjs/operators'
 import { TransferTask, TransferStatus, TransferSummary } from './transfer.model'
 
 /**
- * TransferStore manages the lifecycle of SFTP transfers for a specific Tab.
- * Each tab owns an isolated instance that is destroyed when the tab closes.
+ * TransferStore is a per-tab queue. Callers create one instance per terminal tab.
+ * It is not an application singleton and it is not restored after restart.
  */
+@Injectable()
 export class TransferStore {
   private tasksSubject = new BehaviorSubject<TransferTask[]>([])
   readonly tasks$: Observable<TransferTask[]> = this.tasksSubject.asObservable()
@@ -84,7 +86,13 @@ export class TransferStore {
     }
 
     const current = this.tasksSubject.value
-    this.tasksSubject.next([...current, task])
+    let base = current
+    if (current.length > 150) {
+      const active = current.filter(t => t.status === 'running' || t.status === 'queued')
+      const finished = current.filter(t => t.status !== 'running' && t.status !== 'queued').slice(-50)
+      base = [...active, ...finished]
+    }
+    this.tasksSubject.next([...base, task])
     return task
   }
 
@@ -156,6 +164,5 @@ export class TransferStore {
    */
   destroy(): void {
     this.cancelAll()
-    this.tasksSubject.complete()
   }
 }

@@ -1,6 +1,7 @@
-import { Component, Input, Output, EventEmitter } from '@angular/core'
+import { Component, Input, Output, EventEmitter, Optional } from '@angular/core'
+import { WorkbenchDialogService } from './workbench-dialog.service'
 
-export type ActivityTab = 'sessions' | 'commands' | 'active-sessions' | 'pairs' | 'settings' | 'about'
+export type ActivityTab = 'sessions' | 'commands' | 'active-sessions' | 'settings' | 'about'
 
 @Component({
   selector: 'workbench-activity-bar',
@@ -9,7 +10,7 @@ export type ActivityTab = 'sessions' | 'commands' | 'active-sessions' | 'pairs' 
       class="activity-item"
       [class.active]="activeTab === 'sessions'"
       (click)="selectTab('sessions')"
-      title="Session Manager (Alt+C)"
+      title="会话管理器 (Alt+C)"
     >
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
@@ -22,7 +23,7 @@ export type ActivityTab = 'sessions' | 'commands' | 'active-sessions' | 'pairs' 
       class="activity-item"
       [class.active]="activeTab === 'commands'"
       (click)="selectTab('commands')"
-      title="Command Manager"
+      title="常用命令库"
     >
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <polyline points="4 17 10 11 4 5"></polyline>
@@ -34,21 +35,10 @@ export type ActivityTab = 'sessions' | 'commands' | 'active-sessions' | 'pairs' 
       class="activity-item"
       [class.active]="activeTab === 'active-sessions'"
       (click)="selectTab('active-sessions')"
-      title="Active Sessions"
+      title="活跃会话"
     >
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
-      </svg>
-    </div>
-
-    <div
-      class="activity-item"
-      [class.active]="activeTab === 'pairs'"
-      (click)="selectTab('pairs')"
-      title="Directory Pairs"
-    >
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
       </svg>
     </div>
 
@@ -56,9 +46,8 @@ export type ActivityTab = 'sessions' | 'commands' | 'active-sessions' | 'pairs' 
 
     <div
       class="activity-item"
-      [class.active]="activeTab === 'settings'"
       (click)="selectTab('settings')"
-      title="Settings"
+      title="系统设置"
     >
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="3"></circle>
@@ -68,9 +57,8 @@ export type ActivityTab = 'sessions' | 'commands' | 'active-sessions' | 'pairs' 
 
     <div
       class="activity-item"
-      [class.active]="activeTab === 'about'"
       (click)="selectTab('about')"
-      title="About Secure Workbench"
+      title="关于工作台"
     >
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10"></circle>
@@ -124,10 +112,20 @@ export type ActivityTab = 'sessions' | 'commands' | 'active-sessions' | 'pairs' 
   ],
 })
 export class WorkbenchActivityBarComponent {
-  @Input() activeTab: ActivityTab = 'commands'
+  @Input() activeTab: ActivityTab = 'sessions'
   @Output() activeTabChange = new EventEmitter<ActivityTab>()
 
+  constructor(@Optional() private dialogService?: WorkbenchDialogService) {}
+
   selectTab(tab: ActivityTab): void {
+    if (tab === 'settings') {
+      this.dialogService?.openSettings()
+      return
+    }
+    if (tab === 'about') {
+      this.dialogService?.openAbout()
+      return
+    }
     this.activeTab = tab
     this.activeTabChange.emit(tab)
   }

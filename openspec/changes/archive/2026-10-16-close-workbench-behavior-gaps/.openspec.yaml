@@ -1,0 +1,3 @@
+schema: spec-driven
+created: 2026-10-16
+goal: 把已声明但未接入主路径的 SFTP、跨连接传输、终端转录和工作台外观行为补成可验收的行为

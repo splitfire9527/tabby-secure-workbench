@@ -20,6 +20,7 @@ export interface RemoteSftpClient {
   chmod(remotePath: string, mode: number): Promise<void>
   rename(oldRemotePath: string, newRemotePath: string): Promise<void>
   unlink(remotePath: string): Promise<void>
+  mkdir?(remotePath: string): Promise<void>
 }
 
 export interface OverwriteUploadResult {
@@ -76,8 +77,21 @@ export class OverwriteUploader {
       if (err.message && err.message.includes('Cannot overwrite directory')) {
         throw err
       }
-      // File does not exist, proceed without saved mode
-      savedMode = null
+      if (
+        err.code === 2 ||
+        err.code === 'ENOENT' ||
+        err.type === 'NO_SUCH_FILE' ||
+        (err.message && (
+          err.message.includes('not found') ||
+          err.message.includes('No such file') ||
+          err.message.includes('does not exist')
+        ))
+      ) {
+        // File does not exist, proceed without saved mode
+        savedMode = null
+      } else {
+        throw err
+      }
     }
 
     // Step 2: Create random temporary file path in same directory

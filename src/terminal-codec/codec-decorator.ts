@@ -3,7 +3,7 @@ import { TerminalDecorator, BaseTerminalTabComponent } from 'tabby-terminal'
 import { ConfigService } from 'tabby-core'
 import { Subscription } from 'rxjs'
 import { StatefulCodec } from './stateful-codec'
-import { CodecMiddleware } from './codec-middleware'
+import { bindSessionCodec } from './session-codec-binding'
 import { WorkbenchEncoding, DEFAULT_WORKBENCH_CONFIG } from '../config/config.model'
 
 @Injectable({ providedIn: 'root' })
@@ -43,34 +43,23 @@ export class CodecTerminalDecorator extends TerminalDecorator {
     const attachToSession = (session: any) => {
       if (!session) return
 
+      const oldUnbind = (tab as any).__workbenchCodecUnbind
+      if (typeof oldUnbind === 'function') oldUnbind()
+      const oldCodec = (tab as any).__workbenchCodec
+      if (oldCodec) {
+        oldCodec.destroy()
+        this.codecRegistry.remove(tab)
+      }
+
       const defaultEnc: WorkbenchEncoding =
         this.config.store?.secureWorkbench?.defaultEncoding || DEFAULT_WORKBENCH_CONFIG.defaultEncoding
 
       const codec = new StatefulCodec(defaultEnc)
-      const middleware = new CodecMiddleware(codec)
-
-      // Support session.middleware stack if available (modern Tabby)
-      if (Array.isArray(session.middleware)) {
-        session.middleware.unshift(middleware)
-      } else if (session.middleware && typeof session.middleware.push === 'function') {
-        session.middleware.push(middleware)
-      }
-
-      // Also hook session.emitOutput if present for direct legacy stream handling
-      if (typeof session.emitOutput === 'function' && !session.__workbenchOutputHooked) {
-        session.__workbenchOutputHooked = true
-        const origEmitOutput = session.emitOutput.bind(session)
-        session.emitOutput = (data: Buffer) => {
-          const { utf8Bytes } = codec.decodeChunk(data)
-          if (utf8Bytes && utf8Bytes.length > 0) {
-            origEmitOutput(utf8Bytes)
-          }
-        }
-      }
+      const unbind = bindSessionCodec(session, codec)
 
       this.codecRegistry.register(tab, codec)
       ;(tab as any).__workbenchCodec = codec
-      ;(tab as any).__workbenchMiddleware = middleware
+      ;(tab as any).__workbenchCodecUnbind = unbind
     }
 
     if (tab.session) {
@@ -101,7 +90,9 @@ export class CodecTerminalDecorator extends TerminalDecorator {
       this.codecRegistry.remove(tab)
     }
 
+    const unbind = (tab as any).__workbenchCodecUnbind
+    if (typeof unbind === 'function') unbind()
     delete (tab as any).__workbenchCodec
-    delete (tab as any).__workbenchMiddleware
+    delete (tab as any).__workbenchCodecUnbind
   }
 }

@@ -17,12 +17,8 @@ import {
   TabsService,
 } from 'tabby-core'
 import { Subscription } from 'rxjs'
-import { TransferStore } from '../transfer-store/transfer-store'
-import { TransferSummary } from '../transfer-store/transfer.model'
 import { ActivityTab } from './workbench-activity-bar.component'
 import { DirectoryPair } from '../sftp-plus/directory-pair.model'
-import { CrossTransferClipboard } from '../cross-transfer/cross-transfer-clipboard'
-import { CrossTransferRelayService } from '../cross-transfer/cross-transfer-relay.service'
 
 @Component({
   selector: 'workbench-shell',
@@ -62,10 +58,7 @@ import { CrossTransferRelayService } from '../cross-transfer/cross-transfer-rela
         <div class="workbench-content">
           <div class="workbench-workspace">
             <!-- PTY Terminal View -->
-            <div
-              class="terminal-pane"
-              [style.display]="viewMode === 'pty' ? 'block' : 'none'"
-            >
+            <div class="terminal-pane">
               <ng-container #terminalHost></ng-container>
 
               <!-- Sleek Connecting Indicator when starting up -->
@@ -126,79 +119,7 @@ import { CrossTransferRelayService } from '../cross-transfer/cross-transfer-rela
               </div>
             </div>
 
-            <!-- SFTP+ Dual-Pane Overlay View -->
-            <div
-              class="sftp-pane"
-              [style.display]="viewMode === 'sftp' ? 'flex' : 'none'"
-            >
-              <div class="sftp-top-bar d-flex justify-content-between align-items-center mb-2">
-                <div class="d-flex align-items-center">
-                  <span class="font-weight-bold text-light mr-2">SFTP+ Dual-Pane</span>
-                  <span class="badge badge-secondary badge-sm">Integrated</span>
-                </div>
-                <div class="d-flex align-items-center">
-                  <button
-                    *ngIf="clipboard.hasItem()"
-                    class="btn btn-sm btn-outline-info mr-2"
-                    (click)="pasteFromOtherConnection()"
-                    title="Paste file copied from another remote connection"
-                  >
-                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" class="mr-1">
-                      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
-                      <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
-                    </svg>
-                    Remote Paste
-                  </button>
-                  <button class="btn btn-sm btn-outline-secondary" (click)="viewMode = 'pty'">
-                    &larr; Back to Terminal
-                  </button>
-                </div>
-              </div>
-
-              <!-- Dual-Pane View -->
-              <div class="sftp-dual-pane-row">
-                <!-- Local Pane -->
-                <div class="sftp-pane-card">
-                  <div class="sftp-pane-header">
-                    <span class="text-truncate mr-2">Local: <code>{{ localCurrentPath }}</code></span>
-                    <button class="btn btn-xs btn-outline-secondary py-0" (click)="refreshLocal()">Refresh</button>
-                  </div>
-                  <div class="sftp-pane-body">
-                    <div class="text-muted small">Local filesystem view ready</div>
-                  </div>
-                </div>
-
-                <!-- Remote Pane -->
-                <div class="sftp-pane-card">
-                  <div class="sftp-pane-header">
-                    <span class="text-truncate mr-2">Remote: <code>{{ remoteCurrentPath }}</code></span>
-                    <div>
-                      <button
-                        *ngIf="clipboard.hasItem()"
-                        class="btn btn-xs btn-info py-0 mr-1"
-                        (click)="pasteFromOtherConnection()"
-                      >
-                        Paste
-                      </button>
-                      <button class="btn btn-xs btn-outline-secondary py-0" (click)="refreshRemote()">Refresh</button>
-                    </div>
-                  </div>
-                  <div class="sftp-pane-body">
-                    <div class="text-muted small">Remote SFTP session ready</div>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
-
-          <!-- Bottom Dock: Transfer Queue (Collapsible) -->
-          <workbench-bottom-dock
-            *ngIf="dockExpanded"
-            [store]="transferStore"
-            [height]="dockHeight"
-            [isExpanded]="dockExpanded"
-            (isExpandedChange)="dockExpanded = $event"
-          ></workbench-bottom-dock>
 
           <!-- SecureCRT Faithful Status Bar -->
           <div class="workbench-status-bar">
@@ -409,11 +330,7 @@ export class WorkbenchShellComponent extends BaseTabComponent implements OnInit,
   dockExpanded = false
   isConnecting = false
 
-  localCurrentPath = '~'
-  remoteCurrentPath = '/home'
-
-  readonly transferStore = new TransferStore()
-  transferSummary: TransferSummary = {
+  transferSummary = {
     queued: 0,
     running: 0,
     succeeded: 0,
@@ -492,8 +409,6 @@ export class WorkbenchShellComponent extends BaseTabComponent implements OnInit,
     private app: AppService,
     private config: ConfigService,
     private hotkeys: HotkeysService,
-    public clipboard: CrossTransferClipboard,
-    private relayService: CrossTransferRelayService,
     @Optional() private tabsService?: TabsService,
     @Optional() private profilesService?: ProfilesService
   ) {
@@ -512,17 +427,6 @@ export class WorkbenchShellComponent extends BaseTabComponent implements OnInit,
         })
       )
     }
-
-    // Subscribe to transfer store summary
-    this.subs.push(
-      this.transferStore.summary$.subscribe(summary => {
-        this.transferSummary = summary
-        // Automatically expand bottom dock when a transfer begins
-        if (summary.running > 0 && !this.dockExpanded) {
-          this.dockExpanded = true
-        }
-      })
-    )
 
     // Global focus hotkey Alt+C focuses the sessions drawer
     if (this.hotkeys.hotkey$) {
@@ -549,7 +453,6 @@ export class WorkbenchShellComponent extends BaseTabComponent implements OnInit,
 
   override ngOnDestroy(): void {
     this.cleanupEmbeddedTab()
-    this.transferStore.destroy()
     this.subs.forEach(s => s.unsubscribe())
     this.terminalSubs.forEach(s => s.unsubscribe())
     super.ngOnDestroy()
@@ -610,7 +513,10 @@ export class WorkbenchShellComponent extends BaseTabComponent implements OnInit,
    * Launch and embed a profile into the workbench workspace.
    */
   async launchProfile(profile: any): Promise<void> {
-    if (!profile || !this.tabsService || !this.profilesService) return
+    if (!profile || !this.tabsService || !this.profilesService || this.isConnecting) return
+    if (!profile.type && profile.options?.host) {
+      profile.type = 'ssh'
+    }
 
     this.isConnecting = true
     this.activeProfile = profile
@@ -647,10 +553,8 @@ export class WorkbenchShellComponent extends BaseTabComponent implements OnInit,
     }
   }
 
-  onApplyDirectoryPair(pair: DirectoryPair): void {
-    if (pair.localPath) this.localCurrentPath = pair.localPath
-    if (pair.remotePath) this.remoteCurrentPath = pair.remotePath
-    this.viewMode = 'sftp'
+  onApplyDirectoryPair(_pair: DirectoryPair): void {
+    // Directory pairs navigate the terminal tab's SFTP pane, not a second shell view.
   }
 
   async onQuickConnect(event: { host: string; user: string; port: number }): Promise<void> {
@@ -666,15 +570,6 @@ export class WorkbenchShellComponent extends BaseTabComponent implements OnInit,
         console.warn('[Workbench] Quick connect failed', err)
       }
     }
-  }
-
-  refreshLocal(): void {}
-  refreshRemote(): void {}
-
-  pasteFromOtherConnection(): void {
-    const item = this.clipboard.getItem()
-    if (!item) return
-    // Execute cross-connection paste
   }
 
   private mountTab(tab: any): void {

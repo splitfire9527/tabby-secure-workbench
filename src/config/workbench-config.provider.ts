@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core'
 import { ConfigProvider } from 'tabby-core'
 import { DEFAULT_WORKBENCH_CONFIG } from './config.model'
+import { SESSION_SEARCH_HOTKEY_ID, SESSION_SEARCH_STROKE } from '../shell/hotkey-defaults'
 
 /**
  * ConfigProvider for Tabby Secure Workbench.
@@ -10,6 +11,9 @@ import { DEFAULT_WORKBENCH_CONFIG } from './config.model'
 export class WorkbenchConfigProvider extends ConfigProvider {
   defaults = {
     secureWorkbench: DEFAULT_WORKBENCH_CONFIG,
+    hotkeys: {
+      [SESSION_SEARCH_HOTKEY_ID]: [SESSION_SEARCH_STROKE],
+    },
   }
 
   platformDefaults = {}
