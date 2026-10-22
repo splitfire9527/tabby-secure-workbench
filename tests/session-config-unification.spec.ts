@@ -1,4 +1,5 @@
 import { WorkbenchSessionConfigService } from '../src/config/workbench-session-config.service'
+import { CodecRegistryService, CodecTerminalDecorator } from '../src/terminal-codec/codec-decorator'
 import { WorkbenchDialogService } from '../src/shell/workbench-dialog.service'
 import { WorkbenchSessionOptionsModalComponent } from '../src/shell/workbench-session-options-modal.component'
 import { DEFAULT_WORKBENCH_CONFIG } from '../src/config/config.model'
@@ -84,10 +85,49 @@ describe('Session Configuration Unification & Default Session Template', () => {
       expect(mockConfigService.save).toHaveBeenCalled()
       const updated = sessionConfigService.getDefaultSessionConfig()
       expect(updated.encoding).toBe('GBK')
+      expect(mockConfigService.store.secureWorkbench.defaultEncoding).toBe('GBK')
       expect(updated.terminalType).toBe('vt100')
       expect(updated.logging.startLogUponConnect).toBe(true)
       expect(updated.logging.logFileName).toBe('default-%H-%Y%M%D.log')
       expect(updated.logging.mode).toBe('raw')
+      expect(mockConfigService.store.secureWorkbench.defaultEncoding).toBe('GBK')
+      expect(sessionConfigService.getDefaultSessionConfig()).toBe(
+        mockConfigService.store.secureWorkbench.defaultSession
+      )
+    })
+
+    it('keeps a saved default encoding when the config object cannot be replaced', () => {
+      const stored = mockConfigService.store.secureWorkbench.defaultSession
+      Object.defineProperty(mockConfigService.store.secureWorkbench, 'defaultSession', {
+        configurable: true,
+        enumerable: true,
+        get: () => stored,
+      })
+      sessionConfigService.saveDefaultSessionConfig({ encoding: 'GB2312' })
+      expect(stored.encoding).toBe('GB2312')
+      expect(mockConfigService.store.secureWorkbench.defaultEncoding).toBe('GB2312')
+      expect(sessionConfigService.getSessionConfig({ options: {} }).encoding).toBe('GB2312')
+    })
+
+    it('uses the default session encoding for a new SSH profile', () => {
+      sessionConfigService.saveDefaultSessionConfig({ encoding: 'GBK' })
+      const profile = { type: 'ssh', options: { host: '10.0.0.8' } }
+      expect(sessionConfigService.getSessionConfig(profile).encoding).toBe('GBK')
+    })
+
+    it('treats inherit as the default session encoding', () => {
+      sessionConfigService.saveDefaultSessionConfig({ encoding: 'GB18030' })
+      const profile = {
+        type: 'ssh',
+        options: { host: '10.0.0.8', secureWorkbench: { encoding: 'inherit' } },
+      }
+      expect(sessionConfigService.getSessionConfig(profile).encoding).toBe('GB18030')
+    })
+
+    it('keeps a global encoding when the session template is still UTF-8', () => {
+      mockConfigService.store.secureWorkbench.defaultEncoding = 'GBK'
+      const profile = { type: 'ssh', options: { host: '10.0.0.8' } }
+      expect(sessionConfigService.getSessionConfig(profile).encoding).toBe('GBK')
     })
 
     it('should get effective session config falling back to default session', () => {
@@ -173,6 +213,75 @@ describe('Session Configuration Unification & Default Session Template', () => {
       expect(profile.options.secureWorkbench.sftp.preferredDockMode).toBe('undock')
       expect(profile.options.loggingConfig.startLogUponConnect).toBe(true)
       expect(profile.options.loggingConfig.logFileName).toBe('session-%H.log')
+    })
+
+    it('reads a self-created session encoding from the saved profile when the live tab hides it', () => {
+      mockConfigService.store.profiles[0].options.secureWorkbench = { encoding: 'GB2312' }
+      sessionConfigService.saveDefaultSessionConfig({ encoding: 'UTF-8' })
+      const proxiedTabProfile = {
+        id: 'prof-1',
+        name: 'Production Server',
+        type: 'ssh',
+        options: { host: '192.168.1.100', user: 'root', port: 22 },
+      }
+
+      expect(sessionConfigService.getSessionConfig(proxiedTabProfile).encoding).toBe('GB2312')
+
+      const decorator = new CodecTerminalDecorator(sessionConfigService, new CodecRegistryService())
+      const tab: any = {
+        profile: proxiedTabProfile,
+        session: { emitOutput: jest.fn(), write: jest.fn() },
+        sessionChanged$: { subscribe: () => ({ unsubscribe() {} }) },
+      }
+      decorator.attach(tab)
+      expect(tab.__workbenchCodec.encoding).toBe('GB2312')
+    })
+
+    it('uses the default SFTP dock when a saved profile only has the implicit full mode', () => {
+      sessionConfigService.saveDefaultSessionConfig({
+        sftp: { preferredDockMode: 'right', autoOpenSFTP: false },
+      })
+      mockConfigService.store.profiles[0].options.secureWorkbench = {
+        sftp: { preferredDockMode: 'full', autoOpenSFTP: false },
+      }
+      const proxiedTabProfile = { id: 'prof-1', options: { host: '192.168.1.100' } }
+
+      expect(sessionConfigService.getSessionConfig(proxiedTabProfile).sftp.preferredDockMode).toBe('right')
+    })
+
+    it('keeps a dock mode the user chose in session options', () => {
+      sessionConfigService.saveDefaultSessionConfig({
+        sftp: { preferredDockMode: 'bottom', autoOpenSFTP: false },
+      })
+      sessionConfigService.saveSessionConfig(mockConfigService.store.profiles[0], {
+        sftp: { preferredDockMode: 'full', dockModeExplicit: true, autoOpenSFTP: false },
+      })
+
+      expect(sessionConfigService.getSessionConfig({ id: 'prof-1', options: {} }).sftp.preferredDockMode).toBe('full')
+    })
+
+    it('should start a new SSH tab on the default session encoding', () => {
+      sessionConfigService.saveDefaultSessionConfig({ encoding: 'GBK' })
+      const decorator = new CodecTerminalDecorator(sessionConfigService, new CodecRegistryService())
+      const tab: any = {
+        profile: { type: 'ssh', options: { secureWorkbench: { encoding: 'inherit' } } },
+        session: { emitOutput: jest.fn(), write: jest.fn() },
+        sessionChanged$: { subscribe: () => ({ unsubscribe() {} }) },
+      }
+      decorator.attach(tab)
+      expect(tab.__workbenchCodec.encoding).toBe('GBK')
+    })
+
+    it('should start a new SSH tab on the profile encoding when one is set', () => {
+      sessionConfigService.saveDefaultSessionConfig({ encoding: 'GBK' })
+      const decorator = new CodecTerminalDecorator(sessionConfigService, new CodecRegistryService())
+      const tab: any = {
+        profile: { type: 'ssh', options: { secureWorkbench: { encoding: 'BIG5' } } },
+        session: { emitOutput: jest.fn(), write: jest.fn() },
+        sessionChanged$: { subscribe: () => ({ unsubscribe() {} }) },
+      }
+      decorator.attach(tab)
+      expect(tab.__workbenchCodec.encoding).toBe('BIG5')
     })
 
     it('should batch-apply default session configuration to all profiles', () => {

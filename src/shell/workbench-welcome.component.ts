@@ -673,12 +673,10 @@ export class WorkbenchWelcomeComponent implements OnInit, OnDestroy {
         }
 
         if (profile) {
-          if (openSftp) {
-            ;(profile as any).__autoOpenSftpFull = true
-            if (!profile.options) profile.options = {}
-            profile.options.__autoOpenSftpFull = true
+          const tab = await this.profilesService.openNewTabForProfile(profile)
+          if (openSftp && typeof (tab as any)?.__openSftpPreferred === 'function') {
+            ;(tab as any).__openSftpPreferred()
           }
-          await this.profilesService.openNewTabForProfile(profile)
         }
       } catch (err) {
         console.warn('[Workbench] Direct connect failed', err)
@@ -697,17 +695,10 @@ export class WorkbenchWelcomeComponent implements OnInit, OnDestroy {
     }
     if (this.profilesService) {
       try {
-        const profToOpen = openSftp
-          ? {
-              ...profile,
-              __autoOpenSftpFull: true,
-              options: {
-                ...(profile.options || {}),
-                __autoOpenSftpFull: true,
-              },
-            }
-          : profile
-        await this.profilesService.openNewTabForProfile(profToOpen)
+        const tab = await this.profilesService.openNewTabForProfile(profile)
+        if (openSftp && typeof (tab as any)?.__openSftpPreferred === 'function') {
+          ;(tab as any).__openSftpPreferred()
+        }
       } catch (err) {
         console.error('[Workbench] Failed to open profile', err)
       } finally {

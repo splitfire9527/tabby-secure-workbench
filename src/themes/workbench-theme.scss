@@ -1170,3 +1170,195 @@ workbench-drawer svg,
   }
 }
 
+/* Pure black framework theme. Terminal ink stays on the active Tabby scheme. */
+body[data-framework-theme="black"] {
+  $black-bg: #000000;
+  $black-surface: #0c0c0c;
+  $black-raised: #161616;
+  $black-hover: #222222;
+  $black-border: #2a2a2a;
+  $black-text: #e6e6e6;
+  $black-muted: #a3a3a3;
+
+  app-root .window.workbench-shell-active,
+  app-root .window.workbench-shell-active .content.main,
+  app-root .window.workbench-shell-active .content.main > .tab-bar {
+    background: $black-bg !important;
+    color: $black-text !important;
+    border-color: $black-border !important;
+  }
+
+  app-root .window.workbench-shell-active .content.main > .tab-bar tab-header {
+    background: $black-surface !important;
+    color: $black-muted !important;
+    border-color: $black-border !important;
+
+    &.active {
+      background: $black-raised !important;
+      color: #ffffff !important;
+    }
+
+    &:hover:not(.active) {
+      background: $black-hover !important;
+      color: #ffffff !important;
+    }
+  }
+
+  workbench-global-title-bar,
+  workbench-header,
+  workbench-shell,
+  .workbench-shell,
+  workbench-activity-bar,
+  .workbench-activity-bar,
+  workbench-sidebar,
+  workbench-drawer,
+  .workbench-drawer,
+  workbench-welcome,
+  workbench-home-tab,
+  workbench-sftp-pane,
+  .workbench-sftp-pane,
+  workbench-bottom-dock,
+  .workbench-bottom-dock,
+  tab-body,
+  start-page,
+  .start-page {
+    background: $black-bg !important;
+    color: $black-text !important;
+    border-color: $black-border !important;
+  }
+
+  .workbench-session-toolbar,
+  .workbench-decorated-session-bar,
+  .workbench-decorated-status-bar,
+  .sftp-toolbar,
+  .sftp-sub-toolbar,
+  .sftp-path-bar,
+  .dock-header,
+  .session-mgr-toolbar,
+  .modal-header,
+  .modal-footer,
+  .settings-nav-sidebar,
+  .native-settings-body {
+    background: $black-surface !important;
+    color: $black-text !important;
+    border-color: $black-border !important;
+  }
+
+  .session-tree,
+  .workbench-modal-dialog,
+  .settings-modal,
+  .about-modal,
+  .quick-search-dialog,
+  .toolbar-dropdown-menu,
+  .tab-group-editor-popup,
+  .recent-item-card,
+  .task-item,
+  .search-input,
+  .sftp-path-input,
+  .form-control,
+  .custom-select,
+  select,
+  textarea,
+  .card,
+  .card.bg-light,
+  .settings-modal .card,
+  .workbench-sftp-container,
+  .command-library,
+  .home-card,
+  .action-card {
+    background: $black-raised !important;
+    color: $black-text !important;
+    border-color: $black-border !important;
+  }
+
+  .btn-toolbar-item,
+  .btn-mgr-tool,
+  .title-btn,
+  .btn-close-modal,
+  .nav-item,
+  .section-title,
+  .section-desc,
+  .drawer-title,
+  .modal-title,
+  .text-dark,
+  .form-text,
+  label,
+  .tree-node,
+  .tree-category-header,
+  .tree-session-row,
+  .session-card,
+  .tree-label,
+  .session-title,
+  .session-secondary-line,
+  .status-item,
+  .sftp-file-row,
+  .dropdown-header,
+  .dropdown-hint,
+  .dropdown-footer,
+  .encoding-item,
+  .pair-menu-item,
+  .quick-option-row {
+    color: $black-text !important;
+    border-color: $black-border !important;
+  }
+
+  .section-desc,
+  .form-text,
+  .session-secondary-line,
+  .status-item,
+  .dropdown-hint,
+  .dropdown-footer,
+  .nav-item {
+    color: $black-muted !important;
+  }
+
+  .btn-toolbar-item:hover,
+  .btn-mgr-tool:hover,
+  .nav-item:hover,
+  .tree-node:hover,
+  .tree-session-row:hover,
+  .session-card:hover,
+  .sftp-file-row:hover,
+  .encoding-item:hover,
+  .pair-menu-item:hover,
+  .quick-option-row:hover,
+  .quick-option-row.active,
+  .recent-item-card:hover {
+    background: $black-hover !important;
+    color: #ffffff !important;
+  }
+
+  .tree-node.selected,
+  .tree-session-row.selected,
+  .session-card.selected,
+  .sftp-file-row.selected,
+  .nav-item.active {
+    background: #242424 !important;
+    color: #ffffff !important;
+  }
+
+  .nav-item.active {
+    color: #7eb6ff !important;
+    border-left-color: #3b82f6 !important;
+  }
+
+  .search-input,
+  .sftp-path-input,
+  .form-control,
+  .group-name-input,
+  .toolbar-dropdown-menu .search-input {
+    background: $black-bg !important;
+    color: $black-text !important;
+    border-color: $black-border !important;
+  }
+
+  .card code {
+    background: #242424 !important;
+    color: $black-text !important;
+  }
+
+  .workbench-modal-backdrop {
+    background: rgba(0, 0, 0, 0.72) !important;
+  }
+}
+

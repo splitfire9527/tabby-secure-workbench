@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, HostListener, Optional } from '@angular/core'
+import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, HostListener, Optional, ElementRef, NgZone } from '@angular/core'
 import { Subscription } from 'rxjs'
 import { TransferStore } from '../transfer-store/transfer-store'
 import { CrossTransferClipboard } from '../cross-transfer/cross-transfer-clipboard'
@@ -18,12 +18,17 @@ import {
   applyBookmark,
   applyPartialPair,
   looksLikeText,
+  locateFileByTypedPrefix,
+  guessLoginHome,
   previewOutcome,
   resolveStartPaths,
   PREVIEW_MAX_BYTES,
 } from '../sftp-plus/navigation-policy'
 import { I18nService } from '../i18n/i18n.service'
-import { DEFAULT_WORKBENCH_CONFIG } from '../config/config.model'
+import { DEFAULT_WORKBENCH_CONFIG, WorkbenchEncoding } from '../config/config.model'
+import { WorkbenchSessionConfigService } from '../config/workbench-session-config.service'
+import { parseRemoteListOutput, remoteListCommands, RemoteDirEntry } from '../sftp-plus/remote-dir-list'
+import { decodeRemotePath, decodeRemoteText, encodeRemotePath } from '../sftp-plus/remote-filename'
 
 let originalFs: any = null
 try {
@@ -36,6 +41,7 @@ try {
 
 export interface SftpFileItem {
   name: string
+  wireName?: string
   isDirectory: boolean
   size: number
   mode?: string
@@ -78,7 +84,7 @@ export interface SftpSessionView {
           </span>
           <span class="text-muted font-mono text-truncate" style="font-size: 11px;">
             <span class="font-weight-bold text-dark">{{ activeView?.localPath }}</span> &harr;
-            <span class="font-weight-bold text-dark">{{ activeView?.remotePath }}</span>
+            <span class="font-weight-bold text-dark">{{ displayRemotePath }}</span>
           </span>
         </div>
 
@@ -233,7 +239,12 @@ export interface SftpSessionView {
           <!-- Dual-Pane Row for This View -->
           <div class="sftp-panes-row">
             <!-- Left Pane: Local Files -->
-            <div class="sftp-pane-card" (contextmenu)="onPaneContextMenu($event, view, 'local')">
+            <div
+              class="sftp-pane-card"
+              data-pane="local"
+              (mousedown)="activeFilePane = 'local'"
+              (contextmenu)="onPaneContextMenu($event, view, 'local')"
+            >
               <!-- Local Address Bar -->
               <div class="pane-address-bar d-flex align-items-center gap-1 px-2 py-1" (mousedown)="$event.stopPropagation()" (click)="$event.stopPropagation()">
                 <button class="btn btn-xs btn-toolbar-icon" (click)="goUpLocal(view)" title="返回上一级">
@@ -337,13 +348,16 @@ export interface SftpSessionView {
               </div>
 
               <!-- Local Table Body -->
-              <div class="pane-card-body scrollable p-1">
+              <div class="pane-card-body scrollable p-1" tabindex="0" data-file-list="local">
                 <div
-                  *ngFor="let file of view.filteredLocalFiles"
+                  *ngFor="let file of view.filteredLocalFiles; let i = index"
                   class="file-row d-flex align-items-center px-2 py-1 rounded"
                   tabindex="0"
+                  [attr.data-view-id]="view.id"
+                  data-file-pane="local"
+                  [attr.data-file-index]="i"
                   [class.selected]="view.selectedLocalFile?.name === file.name"
-                  (click)="view.selectedLocalFile = file"
+                  (click)="selectListedFile(view, file, 'local', $event)"
                   (dblclick)="onDblClickLocal(view, file)"
                   (keydown.enter)="onEnterFile(view, file, 'local')"
                   (contextmenu)="onFileContextMenu($event, view, file, 'local')"
@@ -371,7 +385,9 @@ export interface SftpSessionView {
             <!-- Right Pane: Remote Files -->
             <div
               class="sftp-pane-card"
+              data-pane="remote"
               [class.drag-hover]="isRemoteDragOver"
+              (mousedown)="activeFilePane = 'remote'"
               (dragover)="onDragOverRemote($event)"
               (dragleave)="onDragLeaveRemote($event)"
               (drop)="onDropRemote($event, view)"
@@ -396,6 +412,19 @@ export interface SftpSessionView {
                 >
                   👁
                 </button>
+                <select
+                  class="form-control form-control-xs remote-encoding-select"
+                  [ngModel]="remoteEncodingChoice"
+                  (ngModelChange)="setRemoteEncoding($event)"
+                  (mousedown)="$event.stopPropagation()"
+                  (click)="$event.stopPropagation()"
+                  (keydown)="$event.stopPropagation()"
+                  (keyup)="$event.stopPropagation()"
+                  title="远程文件名编码，默认跟随终端编码"
+                >
+                  <option value="inherit">跟随终端 ({{ terminalEncoding }})</option>
+                  <option *ngFor="let enc of remoteEncodingOptions" [value]="enc">{{ enc }}</option>
+                </select>
                 <input
                   type="text"
                   class="form-control form-control-xs path-input font-mono flex-1"
@@ -485,13 +514,16 @@ export interface SftpSessionView {
               </div>
 
               <!-- Remote Table Body -->
-              <div class="pane-card-body scrollable p-1">
+              <div class="pane-card-body scrollable p-1" tabindex="0" data-file-list="remote">
                 <div
-                  *ngFor="let file of view.filteredRemoteFiles"
+                  *ngFor="let file of view.filteredRemoteFiles; let i = index"
                   class="file-row d-flex align-items-center px-2 py-1 rounded"
                   tabindex="0"
+                  [attr.data-view-id]="view.id"
+                  data-file-pane="remote"
+                  [attr.data-file-index]="i"
                   [class.selected]="view.selectedRemoteFile?.name === file.name"
-                  (click)="view.selectedRemoteFile = file"
+                  (click)="selectListedFile(view, file, 'remote', $event)"
                   (dblclick)="onDblClickRemote(view, file)"
                   (keydown.enter)="onEnterFile(view, file, 'remote')"
                   (contextmenu)="onFileContextMenu($event, view, file, 'remote')"
@@ -939,7 +971,7 @@ export interface SftpSessionView {
         background: rgba(30, 112, 191, 0.15);
         color: #1e70bf;
       }
-      .path-input, .filter-input {
+      .path-input, .filter-input, .remote-encoding-select {
         height: 22px;
         font-size: 11px;
         padding: 2px 6px;
@@ -947,6 +979,11 @@ export interface SftpSessionView {
         border: 1px solid #d0d4dc !important;
         color: #222222 !important;
         border-radius: 2px;
+      }
+      .remote-encoding-select {
+        width: 132px;
+        flex: 0 0 132px;
+        padding-right: 2px;
       }
       .col-name {
         flex: 1 1 0%;
@@ -1126,6 +1163,16 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
   private realSftpSession: any = null
   isConnectingSftp = false
   isRemoteDragOver = false
+  activeFilePane: 'local' | 'remote' = 'remote'
+  remoteEncodingChoice: 'inherit' | WorkbenchEncoding = 'inherit'
+  readonly remoteEncodingOptions: WorkbenchEncoding[] = ['UTF-8', 'GBK', 'GB2312', 'GB18030', 'BIG5']
+  private fileListOwnsKeys = false
+  private typeaheadBuffer = ''
+  private typeaheadTimer: any = null
+  private loginHomeCache: string | null = null
+  private readonly captureKeyDown = (event: KeyboardEvent) => this.captureFileListKey(event)
+  private readonly captureKeyFollowup = (event: Event) => this.captureFileListFollowup(event)
+  private readonly captureMouseDown = (event: MouseEvent) => this.captureFileListPointer(event)
 
   public tarChannel: TarChannel = new TarChannel({
     hasSsh: () => !!this.getSshSession(),
@@ -1162,7 +1209,10 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
     private relay: CrossTransferRelayService,
     private notifications: NotificationsService,
     @Optional() private config?: ConfigService,
-    @Optional() public i18n?: I18nService
+    @Optional() public i18n?: I18nService,
+    @Optional() private sessionConfig?: WorkbenchSessionConfigService,
+    @Optional() private elementRef?: ElementRef,
+    @Optional() private zone?: NgZone
   ) {}
 
   t(path: string, fallback?: string): string {
@@ -1205,13 +1255,125 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
     return null
   }
 
+  private sessionSftp(): { initialRemotePath?: string; initialLocalPath?: string } | undefined {
+    return this.sessionConfig?.getStoredWorkbench(this.activeTab?.profile)?.sftp
+  }
+
   resolveInitialRemotePath(): string {
-    const custom = this.activeTab?.profile?.options?.secureWorkbench?.sftp?.initialRemotePath
-    if (custom) return custom
-    const user = this.activeTab?.profile?.options?.user
-    if (user === 'root') return '/root'
-    if (user) return `/home/${user}`
-    return '/'
+    const explicit = this.explicitRemoteStart()
+    if (explicit) return explicit
+    return guessLoginHome(this.loginUser())
+  }
+
+  private explicitRemoteStart(): string {
+    const profilePath = (this.sessionSftp()?.initialRemotePath || '').trim()
+    if (profilePath) return profilePath
+    return (this.fileTransferConfig().defaultRemotePath || '').trim()
+  }
+
+  private loginUser(): string {
+    return (this.activeTab?.profile?.options?.user || '').trim()
+  }
+
+  get terminalEncoding(): WorkbenchEncoding {
+    const live = this.activeTab?.__workbenchCodec?.encoding as WorkbenchEncoding | undefined
+    if (live) return live
+    const resolved = this.sessionConfig?.getSessionConfig(this.activeTab?.profile)?.encoding
+    return resolved && resolved !== 'inherit' ? resolved : 'UTF-8'
+  }
+
+  get effectiveRemoteEncoding(): WorkbenchEncoding {
+    return this.remoteEncodingChoice === 'inherit' ? this.terminalEncoding : this.remoteEncodingChoice
+  }
+
+  get displayRemotePath(): string {
+    return decodeRemotePath(this.activeView?.remotePath || '', this.effectiveRemoteEncoding)
+  }
+
+  setRemoteEncoding(value: 'inherit' | WorkbenchEncoding): void {
+    this.remoteEncodingChoice = value
+    this.views.forEach(view => this.loadRemoteFiles(view))
+  }
+
+  private watchTerminalCodec(): void {
+    const codec = this.activeTab?.__workbenchCodec
+    if (!codec?.encodingChanged$ || (codec as any).__workbenchSftpEncodingWatch) return
+    ;(codec as any).__workbenchSftpEncodingWatch = true
+    this.subs.push(
+      codec.encodingChanged$.subscribe(() => {
+        if (this.remoteEncodingChoice === 'inherit') {
+          this.views.forEach(view => this.loadRemoteFiles(view))
+        }
+      })
+    )
+  }
+
+  private presentRemotePath(remotePath: string): string {
+    return decodeRemotePath(remotePath || '', this.effectiveRemoteEncoding)
+  }
+
+  private presentRemoteName(wireName: string): string {
+    if (!wireName || wireName === '..') return wireName
+    return decodeRemoteText(wireName, this.effectiveRemoteEncoding)
+  }
+
+  private remoteWire(file: SftpFileItem): string {
+    return file.wireName || file.name
+  }
+
+  async resolveLoginHome(): Promise<string> {
+    if (this.loginHomeCache) return this.loginHomeCache
+    const queried = await this.queryRemoteHome()
+    const home = queried || guessLoginHome(this.loginUser())
+    this.loginHomeCache = home
+    return home
+  }
+
+  private async queryRemoteHome(): Promise<string | null> {
+    const sshSession = this.getSshSession()
+    const client = sshSession?.ssh
+    if (!client || typeof client.openSessionChannel !== 'function' || typeof client.activateChannel !== 'function') {
+      return null
+    }
+    let channel: any = null
+    const subs: Subscription[] = []
+    try {
+      channel = await client.activateChannel(await client.openSessionChannel())
+      const output = await new Promise<string>((resolve, reject) => {
+        let text = ''
+        let settled = false
+        let timer: any
+        const done = (value: string | null, failed?: unknown) => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          subs.splice(0).forEach(sub => sub.unsubscribe())
+          if (failed) reject(failed)
+          else resolve(value || '')
+        }
+        timer = setTimeout(() => done(text), 3000)
+        const take = (data: any) => {
+          if (Buffer.isBuffer(data)) text += data.toString('utf8')
+          else if (typeof data === 'string') text += data
+          else if (data) text += Buffer.from(data).toString('utf8')
+        }
+        if (channel.data$?.subscribe) subs.push(channel.data$.subscribe(take))
+        if (channel.eof$?.subscribe) subs.push(channel.eof$.subscribe(() => done(text)))
+        if (channel.closed$?.subscribe) subs.push(channel.closed$.subscribe(() => done(text)))
+        Promise.resolve(channel.requestExec('printf %s "$HOME"')).catch(err => done(null, err))
+      })
+      const home = output.trim().split(/\r?\n/)[0]
+      if (home.startsWith('/')) return home
+      return null
+    } catch (err) {
+      console.warn('[Workbench SFTP] Could not query login home', err)
+      return null
+    } finally {
+      subs.forEach(sub => sub.unsubscribe())
+      try {
+        await channel?.close?.()
+      } catch {}
+    }
   }
 
   private fileTransferConfig() {
@@ -1227,9 +1389,9 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
   resolveStartPathsSync(workingDirectory?: string | null) {
     const ft = this.fileTransferConfig()
     const memory = this.config?.store?.secureWorkbench?.pathMemory?.[this.profileId()]
-    const profileRemote = this.activeTab?.profile?.options?.secureWorkbench?.sftp?.initialRemotePath
-    const defaultsRemote = ft.defaultRemotePath || profileRemote || this.resolveInitialRemotePath()
-    const defaultsLocal = ft.defaultLocalPath || os.homedir()
+    const profileSftp = this.sessionSftp()
+    const defaultsRemote = this.explicitRemoteStart()
+    const defaultsLocal = profileSftp?.initialLocalPath || ft.defaultLocalPath || os.homedir()
     return resolveStartPaths({
       mode: ft.pathMode,
       defaultLocal: defaultsLocal,
@@ -1287,12 +1449,28 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    document.addEventListener('keydown', this.captureKeyDown, true)
+    document.addEventListener('keypress', this.captureKeyFollowup, true)
+    document.addEventListener('beforeinput', this.captureKeyFollowup, true)
+    document.addEventListener('mousedown', this.captureMouseDown, true)
+    this.watchTerminalCodec()
     const start = this.resolveStartPathsSync()
-    const firstView = this.createView('视图 1', start.localPath || os.homedir(), start.remotePath)
+    const remote = (start.remotePath || '').trim() || guessLoginHome(this.loginUser())
+    const firstView = this.createView('视图 1', start.localPath || os.homedir(), remote)
     this.views = [firstView]
     this.activeViewId = firstView.id
     this.loadLocalFiles(firstView)
     this.loadRemoteFiles(firstView)
+
+    if (!(start.remotePath || '').trim()) {
+      this.resolveLoginHome().then(home => {
+        if (!home || home === firstView.remotePath) return
+        if (firstView.remotePath !== remote) return
+        firstView.remotePath = home
+        firstView.remotePathInput = home
+        this.loadRemoteFiles(firstView)
+      }).catch(() => {})
+    }
 
     if (start.needsWorkingDirectory && typeof this.activeTab?.session?.getWorkingDirectory === 'function') {
       this.activeTab.session.getWorkingDirectory().then((cwd: string) => {
@@ -1317,6 +1495,11 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    document.removeEventListener('keydown', this.captureKeyDown, true)
+    document.removeEventListener('keypress', this.captureKeyFollowup, true)
+    document.removeEventListener('beforeinput', this.captureKeyFollowup, true)
+    document.removeEventListener('mousedown', this.captureMouseDown, true)
+    if (this.typeaheadTimer) clearTimeout(this.typeaheadTimer)
     this.subs.forEach((s) => s.unsubscribe())
     this.subs = []
     this.realSftpSession = null
@@ -1335,7 +1518,7 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
   }
 
   // --- View Management ---
-  createView(title?: string, localPath = os.homedir(), remotePath = '/root'): SftpSessionView {
+  createView(title?: string, localPath = os.homedir(), remotePath = ''): SftpSessionView {
     const id = `view-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`
     return {
       id,
@@ -1366,7 +1549,7 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
     const newView = this.createView(
       `视图 ${this.views.length + 1}`,
       active ? active.localPath : os.homedir(),
-      active ? active.remotePath : '/root'
+      active ? active.remotePath : guessLoginHome(this.loginUser())
     )
     this.views.push(newView)
     this.activeViewId = newView.id
@@ -1554,19 +1737,44 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
   }
 
-  async loadRemoteFiles(v?: SftpSessionView): Promise<void> {
+  async loadRemoteFiles(v?: SftpSessionView, homeRetried = false): Promise<void> {
     const view = v || this.activeView
     if (!view) return
-    view.remotePathInput = view.remotePath
+    if (!String(view.remotePath || '').trim()) {
+      view.remotePath = await this.resolveLoginHome()
+    }
+    view.remotePath = encodeRemotePath(view.remotePath, this.effectiveRemoteEncoding)
+    this.watchTerminalCodec()
+    view.remotePathInput = this.presentRemotePath(view.remotePath)
+
+    if (this.effectiveRemoteEncoding !== 'UTF-8') {
+      const listed = await this.listRemoteByBytes(view.remotePath)
+      if (listed) {
+        const items: SftpFileItem[] = listed.map(entry => ({
+          name: this.presentRemoteName(entry.nameWire),
+          wireName: entry.nameWire,
+          isDirectory: entry.isDirectory,
+          size: entry.size || 0,
+          mode: this.formatPermissions(entry.mode, entry.isDirectory),
+          modified: entry.mtime ? this.formatDate(new Date(entry.mtime * 1000)) : '',
+          modifiedMs: entry.mtime ? entry.mtime * 1000 : 0,
+        }))
+        this.publishRemoteItems(view, items)
+        return
+      }
+    }
 
     const sftp = await this.getRealSftpSession()
+    this.watchTerminalCodec()
     if (sftp) {
       try {
         const rawFiles = await sftp.readdir(view.remotePath)
         const items: SftpFileItem[] = (rawFiles || []).map((f: any) => {
           const isDir = f.isDirectory === true
+          const wireName = String(f.name ?? '')
           return {
-            name: f.name,
+            name: this.presentRemoteName(wireName),
+            wireName,
             isDirectory: isDir,
             size: f.size || 0,
             mode: typeof f.mode === 'number' ? this.formatPermissions(f.mode, isDir) : (f.mode || (isDir ? 'drwxr-xr-x' : '-rw-r--r--')),
@@ -1574,53 +1782,20 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
             modifiedMs: f.modified ? new Date(f.modified).getTime() : 0,
           }
         })
-
-        if (view.remotePath !== '/' && !items.some((f) => f.name === '..')) {
-          items.unshift({
-            name: '..',
-            isDirectory: true,
-            size: 0,
-            mode: 'drwxr-xr-x',
-            modified: '',
-            modifiedMs: 0,
-          })
-        }
-
-        let filtered = items
-        if (!view.showHiddenRemote) {
-          filtered = filtered.filter((f) => f.name === '..' || !f.name.startsWith('.'))
-        }
-
-        view.remoteFiles = filtered
-        this.applyRemoteFilter(view)
-        view.selectedRemoteFile = null
+        this.publishRemoteItems(view, items)
         return
       } catch (err: any) {
         console.warn('[Workbench SFTP] Failed to readdir:', view.remotePath, err)
-        // If /root failed, try / as fallback
-        if (view.remotePath === '/root') {
-          view.remotePath = '/'
-          view.remotePathInput = '/'
-          try {
-            const rawFiles = await sftp.readdir('/')
-            const items: SftpFileItem[] = (rawFiles || []).map((f: any) => {
-              const isDir = f.isDirectory === true
-              return {
-                name: f.name,
-                isDirectory: isDir,
-                size: f.size || 0,
-                mode: typeof f.mode === 'number' ? this.formatPermissions(f.mode, isDir) : (f.mode || (isDir ? 'drwxr-xr-x' : '-rw-r--r--')),
-                modified: f.modified ? this.formatDate(new Date(f.modified)) : '',
-                modifiedMs: f.modified ? new Date(f.modified).getTime() : 0,
-              }
-            })
-            view.remoteFiles = !view.showHiddenRemote ? items.filter((f) => !f.name.startsWith('.')) : items
-            this.applyRemoteFilter(view)
-            view.selectedRemoteFile = null
-            return
-          } catch {}
+        const guessed = guessLoginHome(this.loginUser())
+        if (!homeRetried && (view.remotePath === guessed || view.remotePath === '/root')) {
+          const home = await this.resolveLoginHome()
+          if (home && home !== view.remotePath) {
+            view.remotePath = home
+            view.remotePathInput = home
+            return this.loadRemoteFiles(view, true)
+          }
         }
-        this.notifications.error(`无法读取远程目录 ${view.remotePath}: ${err?.message || err}`)
+        this.notifications.error(`无法读取远程目录 ${this.presentRemotePath(view.remotePath)}: ${err?.message || err}`)
       }
     }
 
@@ -1628,6 +1803,85 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
     view.remoteFiles = []
     this.applyRemoteFilter(view)
     view.selectedRemoteFile = null
+  }
+
+  private publishRemoteItems(view: SftpSessionView, items: SftpFileItem[]): void {
+    if (view.remotePath !== '/' && !items.some(f => f.name === '..')) {
+      items.unshift({
+        name: '..',
+        isDirectory: true,
+        size: 0,
+        mode: 'drwxr-xr-x',
+        modified: '',
+        modifiedMs: 0,
+      })
+    }
+    let filtered = items
+    if (!view.showHiddenRemote) {
+      filtered = filtered.filter(f => f.name === '..' || !f.name.startsWith('.'))
+    }
+    view.remoteFiles = filtered
+    this.applyRemoteFilter(view)
+    view.selectedRemoteFile = null
+  }
+
+  private async listRemoteByBytes(wirePath: string): Promise<RemoteDirEntry[] | null> {
+    let lastErr = ''
+    for (const command of remoteListCommands(wirePath)) {
+      const output = await this.execRemote(command, 12000)
+      if (!output) continue
+      const parsed = parseRemoteListOutput(output.stdout.toString('utf8'))
+      if (parsed) return parsed
+      lastErr = output.stderr.toString('utf8').trim()
+    }
+    if (lastErr) console.warn('[Workbench SFTP] raw directory listing failed', lastErr.slice(0, 400))
+    return null
+  }
+
+  private async execRemote(command: string, timeoutMs: number): Promise<{ stdout: Buffer, stderr: Buffer } | null> {
+    const sshSession = this.getSshSession()
+    const client = sshSession?.ssh
+    if (!client || typeof client.openSessionChannel !== 'function' || typeof client.activateChannel !== 'function') {
+      return null
+    }
+    let channel: any = null
+    const subs: Subscription[] = []
+    try {
+      channel = await client.activateChannel(await client.openSessionChannel())
+      return await new Promise<{ stdout: Buffer, stderr: Buffer }>((resolve, reject) => {
+        const out: Buffer[] = []
+        const err: Buffer[] = []
+        let settled = false
+        let timer: any
+        const done = (failed?: unknown) => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          subs.splice(0).forEach(sub => sub.unsubscribe())
+          if (failed) reject(failed)
+          else resolve({ stdout: Buffer.concat(out), stderr: Buffer.concat(err) })
+        }
+        timer = setTimeout(() => done(), timeoutMs)
+        const take = (target: Buffer[]) => (data: any) => {
+          if (Buffer.isBuffer(data)) target.push(data)
+          else if (typeof data === 'string') target.push(Buffer.from(data, 'latin1'))
+          else if (data) target.push(Buffer.from(data))
+        }
+        if (channel.data$?.subscribe) subs.push(channel.data$.subscribe(take(out)))
+        if (channel.extendedData$?.subscribe) subs.push(channel.extendedData$.subscribe(take(err)))
+        if (channel.eof$?.subscribe) subs.push(channel.eof$.subscribe(() => done()))
+        if (channel.closed$?.subscribe) subs.push(channel.closed$.subscribe(() => done()))
+        Promise.resolve(channel.requestExec(command)).catch((err: unknown) => done(err))
+      })
+    } catch (err) {
+      console.warn('[Workbench SFTP] remote exec failed', err)
+      return null
+    } finally {
+      subs.forEach(sub => sub.unsubscribe())
+      try {
+        await channel?.close?.()
+      } catch {}
+    }
   }
 
   applyRemoteFilter(view: SftpSessionView): void {
@@ -1648,16 +1902,105 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
   }
 
   goHomeRemote(view: SftpSessionView): void {
-    view.remotePath = this.resolveInitialRemotePath()
-    this.loadRemoteFiles(view)
+    this.resolveLoginHome().then(home => {
+      view.remotePath = home
+      view.remotePathInput = home
+      this.loadRemoteFiles(view)
+    }).catch(() => {
+      view.remotePath = guessLoginHome(this.loginUser())
+      this.loadRemoteFiles(view)
+    })
   }
 
   applyRemotePathInput(view: SftpSessionView): void {
     const target = view.remotePathInput.trim()
-    if (target) {
-      view.remotePath = target
-      this.loadRemoteFiles(view)
+    if (!target) {
+      this.goHomeRemote(view)
+      return
     }
+    const shown = this.presentRemotePath(view.remotePath)
+    if (target !== shown && target !== view.remotePath) {
+      view.remotePath = encodeRemotePath(target, this.effectiveRemoteEncoding)
+    }
+    view.remotePathInput = this.presentRemotePath(view.remotePath)
+    this.loadRemoteFiles(view)
+  }
+
+  selectListedFile(view: SftpSessionView, file: SftpFileItem, side: 'local' | 'remote', event?: MouseEvent): void {
+    this.activeFilePane = side
+    this.typeaheadBuffer = ''
+    if (side === 'local') view.selectedLocalFile = file
+    else view.selectedRemoteFile = file
+    const row = event?.currentTarget as HTMLElement | undefined
+    row?.focus?.()
+  }
+
+  private captureFileListPointer(event: MouseEvent): void {
+    const target = event.target as HTMLElement | null
+    const root = this.elementRef?.nativeElement as HTMLElement | undefined
+    if (!target || !root) return
+    if (!root.contains(target)) {
+      this.fileListOwnsKeys = false
+      return
+    }
+    const pane = target.closest('[data-pane]') as HTMLElement | null
+    const paneName = pane?.getAttribute('data-pane')
+    if (paneName === 'local' || paneName === 'remote') {
+      this.activeFilePane = paneName
+    }
+    const field = target.closest('input, textarea, select')
+    this.fileListOwnsKeys = !field
+    if (this.fileListOwnsKeys) {
+      const row = target.closest('.file-row') as HTMLElement | null
+      const list = target.closest('[data-file-list]') as HTMLElement | null
+      ;(row || list)?.focus?.()
+    }
+  }
+
+  private captureFileListKey(event: KeyboardEvent): void {
+    if (!this.fileListOwnsKeys || this.showActionModal) return
+    const target = event.target as HTMLElement | null
+    if (target?.closest('input, textarea, select') && !target.closest('.xterm')) return
+    if (event.altKey || event.ctrlKey || event.metaKey) return
+    if (event.key.length !== 1) return
+    if (!/^[\p{L}\p{N}._\- ]$/u.test(event.key)) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+    const apply = () => this.onFileListKeydown(event)
+    if (this.zone) this.zone.run(apply)
+    else apply()
+  }
+
+  private captureFileListFollowup(event: Event): void {
+    if (!this.fileListOwnsKeys) return
+    const target = event.target as HTMLElement | null
+    if (target?.closest('input, textarea, select') && !target.closest('.xterm')) return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+  }
+
+  private onFileListKeydown(event: KeyboardEvent): void {
+    const view = this.activeView
+    if (!view) return
+    const side = this.activeFilePane
+    const files = side === 'local' ? view.filteredLocalFiles : view.filteredRemoteFiles
+    const current = side === 'local' ? view.selectedLocalFile?.name : view.selectedRemoteFile?.name
+    const hit = locateFileByTypedPrefix(files.map(file => file.name), this.typeaheadBuffer, event.key, current)
+    this.typeaheadBuffer = hit.buffer
+    if (this.typeaheadTimer) clearTimeout(this.typeaheadTimer)
+    this.typeaheadTimer = setTimeout(() => {
+      this.typeaheadBuffer = ''
+    }, 800)
+    if (hit.index < 0) return
+    const file = files[hit.index]
+    if (!file) return
+    if (side === 'local') view.selectedLocalFile = file
+    else view.selectedRemoteFile = file
+    const row = this.elementRef?.nativeElement?.querySelector?.(
+      `[data-view-id="${view.id}"][data-file-pane="${side}"][data-file-index="${hit.index}"]`
+    ) as HTMLElement | null
+    row?.scrollIntoView?.({ block: 'nearest' })
+    row?.focus?.()
   }
 
   // --- Sorting Helper ---
@@ -1738,7 +2081,7 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
 
   onDblClickRemote(view: SftpSessionView, file: SftpFileItem): void {
     if (file.isDirectory) {
-      view.remotePath = path.posix.resolve(view.remotePath, file.name)
+      view.remotePath = path.posix.resolve(view.remotePath, this.remoteWire(file))
       this.loadRemoteFiles(view)
       this.rememberPaths(view)
       return
@@ -1789,7 +2132,7 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
       this.notifications.error(this.previewNotice)
       return
     }
-    const remotePath = path.posix.join(view.remotePath, file.name)
+    const remotePath = path.posix.join(view.remotePath, this.remoteWire(file))
     const handle = await sftp.open(remotePath, 1)
     const chunks: Buffer[] = []
     let total = 0
@@ -2053,7 +2396,7 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
       await this.downloadDirectory(view, file, true)
       return
     }
-    const src = path.posix.join(view.remotePath, file.name)
+    const src = path.posix.join(view.remotePath, this.remoteWire(file))
     const dst = path.join(view.localPath, file.name)
 
     const taskId = `dl-${Date.now()}`
@@ -2099,7 +2442,7 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
 
   async downloadDirectory(view: SftpSessionView, file: SftpFileItem, preferTar = true): Promise<void> {
     if (!this.store) return
-    const remoteDir = path.posix.join(view.remotePath, file.name)
+    const remoteDir = path.posix.join(view.remotePath, this.remoteWire(file))
     const localTarget = path.join(view.localPath, file.name)
     const taskId = `dl-dir-${Date.now()}`
 
@@ -2291,7 +2634,7 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
       return
     }
     const sessionName = this.activeTab?.title || 'SSH-Session'
-    const fullRemotePath = path.posix.join(view.remotePath, file.name)
+    const fullRemotePath = path.posix.join(view.remotePath, this.remoteWire(file))
 
     this.clipboard.copy({
       sourceSessionId: this.activeTab?.id || 'tab-source',
@@ -2471,7 +2814,7 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
         if (sftp) {
           try {
             await sftp.rename(
-              path.posix.join(view.remotePath, view.selectedRemoteFile.name),
+              path.posix.join(view.remotePath, this.remoteWire(view.selectedRemoteFile)),
               path.posix.join(view.remotePath, val)
             )
             this.notifications.info(`已重命名为: ${val}`)
@@ -2487,7 +2830,7 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
       if (sftp) {
         try {
           const parsed = parseInt(val, 8) || parseInt(val, 10)
-          await sftp.chmod(path.posix.join(view.remotePath, view.selectedRemoteFile.name), parsed)
+          await sftp.chmod(path.posix.join(view.remotePath, this.remoteWire(view.selectedRemoteFile)), parsed)
           this.notifications.info(`已修改权限为: ${val}`)
           this.loadRemoteFiles(view)
         } catch (err: any) {
@@ -2528,7 +2871,7 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
     }
 
     try {
-      const remoteTarget = path.posix.join(view.remotePath, file.name)
+      const remoteTarget = path.posix.join(view.remotePath, this.remoteWire(file))
       if (file.isDirectory) {
         await sftp.rmdir(remoteTarget)
       } else {
@@ -2562,7 +2905,7 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
         view.localPath = path.resolve(view.localPath, file.name)
         this.loadLocalFiles(view)
       } else {
-        view.remotePath = path.posix.resolve(view.remotePath, file.name)
+        view.remotePath = path.posix.resolve(view.remotePath, this.remoteWire(file))
         this.loadRemoteFiles(view)
       }
       return

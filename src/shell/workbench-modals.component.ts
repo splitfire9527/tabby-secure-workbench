@@ -89,12 +89,13 @@ export interface SettingsNavCategory {
                 <select class="form-control form-control-sm" [(ngModel)]="frameworkTheme" (change)="saveConfig()">
                   <option value="default">默认工程灰 (清晰高对比)</option>
                   <option value="dark">暗色黑夜 (Dark)</option>
+                  <option value="black">纯黑 (Black)</option>
                   <option value="system">跟随系统 (System)</option>
                   <option value="tabby">跟随 Tabby (Tabby Theme)</option>
                   <option *ngFor="let ct of customThemes" [value]="ct.name">自定义: {{ ct.name }}</option>
                 </select>
                 <small class="form-text mt-1" style="font-size: 12px; color: #475569;">
-                  提供清晰高对比的默认灰阶、暗色深黑模式或自动跟随宿主系统与 Tabby 配色。
+                  提供默认灰阶、暗色、纯黑，或自动跟随宿主系统与 Tabby 配色。终端配色仍使用当前会话方案。
                 </small>
               </div>
 
@@ -477,7 +478,7 @@ export interface SettingsNavCategory {
                     <input
                       type="text"
                       class="form-control form-control-sm font-mono"
-                      placeholder="/root"
+                      placeholder="留空则进入登录用户主目录"
                       [(ngModel)]="fileTransfer.defaultRemotePath"
                       (change)="saveConfig()"
                     />

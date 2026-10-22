@@ -341,11 +341,12 @@ export class WorkbenchSettingsTabComponent {
   }
 
   get defaultEncoding(): WorkbenchEncoding {
-    return this.config.store?.secureWorkbench?.defaultEncoding || 'UTF-8'
+    const encoding = this.sessionConfigService.getSessionConfig(null).encoding
+    return encoding && encoding !== 'inherit' ? encoding : 'UTF-8'
   }
 
   set defaultEncoding(val: WorkbenchEncoding) {
-    this.ensureConfig().defaultEncoding = val
+    this.sessionConfigService.saveDefaultSessionConfig({ encoding: val })
   }
 
   get dockHeight(): number {

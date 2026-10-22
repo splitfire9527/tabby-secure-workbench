@@ -22,6 +22,7 @@ import { WorkbenchSftpPaneComponent } from './workbench-sftp-pane.component'
 import { WorkbenchBottomDockComponent } from './workbench-bottom-dock.component'
 import { SessionLoggerService } from '../session-logging/session-logger.service'
 import { WorkbenchHostShellService } from './workbench-host-shell.service'
+import { WorkbenchSessionConfigService } from '../config/workbench-session-config.service'
 import {
   devicePixelDelta,
   parseDesktopMonospace,
@@ -62,7 +63,8 @@ export class WorkbenchTerminalDecorator extends TerminalDecorator {
     private profilesService: ProfilesService,
     private notifications: NotificationsService,
     private loggerService: SessionLoggerService,
-    @Optional() @Inject(forwardRef(() => WorkbenchHostShellService)) private hostShell?: WorkbenchHostShellService
+    @Optional() @Inject(forwardRef(() => WorkbenchHostShellService)) private hostShell?: WorkbenchHostShellService,
+    @Optional() private sessionConfig?: WorkbenchSessionConfigService
   ) {
     super()
   }
@@ -127,10 +129,12 @@ export class WorkbenchTerminalDecorator extends TerminalDecorator {
             ;(tab.frontend as any).__workbenchFocusGuarded = true
             const origFocus = tab.frontend.focus.bind(tab.frontend)
             tab.frontend.focus = () => {
-              const active = typeof document !== 'undefined' ? document.activeElement : null
+              const active = typeof document !== 'undefined' ? document.activeElement as HTMLElement | null : null
               if (
                 active &&
-                (['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName) || (active as HTMLElement).isContentEditable)
+                (['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName) ||
+                  active.isContentEditable ||
+                  !!active.closest?.('.workbench-sftp-container'))
               ) {
                 return
               }
@@ -276,8 +280,22 @@ export class WorkbenchTerminalDecorator extends TerminalDecorator {
           (tab as any).profile?.__autoOpenSftpRight ||
           (tab as any).profile?.options?.__autoOpenSftpRight
         )
-        let currentDockMode: 'bottom' | 'right' | 'full' | 'undock' = shouldAutoOpenSftpFull ? 'full' : (shouldAutoOpenSftpRight ? 'right' : 'full')
-        let sftpVisible = shouldAutoOpenSftpFull || shouldAutoOpenSftpRight
+        const preferredDockMode = this.sessionConfig?.getSessionConfig((tab as any).profile)?.sftp?.preferredDockMode || 'bottom'
+        const autoOpenSftp = !!this.sessionConfig?.getSessionConfig((tab as any).profile)?.sftp?.autoOpenSFTP
+        let currentDockMode: 'bottom' | 'right' | 'full' | 'undock' = shouldAutoOpenSftpFull
+          ? 'full'
+          : (shouldAutoOpenSftpRight ? 'right' : preferredDockMode)
+        let sftpVisible = shouldAutoOpenSftpFull || shouldAutoOpenSftpRight || autoOpenSftp
+
+        const openPreferredSftp = () => {
+          currentDockMode = this.sessionConfig?.getSessionConfig((tab as any).profile)?.sftp?.preferredDockMode || preferredDockMode
+          sftpVisible = true
+          applyDockLayout()
+        }
+
+        ;(tab as any).__openSftpPreferred = () => {
+          this.zone.run(() => openPreferredSftp())
+        }
 
         ;(tab as any).__openSftpFull = () => {
           this.zone.run(() => {

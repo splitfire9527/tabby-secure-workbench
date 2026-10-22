@@ -414,17 +414,11 @@ export class WorkbenchQuickSearchModalComponent implements OnInit, OnDestroy {
 
     if (opt.type === 'profile' && opt.profile && this.profilesService) {
       try {
-        const profToOpen = openSftp
-          ? {
-              ...opt.profile,
-              __autoOpenSftpFull: true,
-              options: {
-                ...(opt.profile.options || {}),
-                __autoOpenSftpFull: true,
-              },
-            }
-          : opt.profile
-        await this.profilesService.openNewTabForProfile(profToOpen)
+        const profToOpen = opt.profile
+        const tab = await this.profilesService.openNewTabForProfile(profToOpen)
+        if (openSftp && typeof (tab as any)?.__openSftpPreferred === 'function') {
+          ;(tab as any).__openSftpPreferred()
+        }
       } catch (err) {
         console.error('[Workbench] Failed to open profile', err)
       }
@@ -470,12 +464,10 @@ export class WorkbenchQuickSearchModalComponent implements OnInit, OnDestroy {
       }
 
       if (profile) {
-        if (openSftp) {
-          ;(profile as any).__autoOpenSftpFull = true
-          if (!profile.options) profile.options = {}
-          profile.options.__autoOpenSftpFull = true
+        const tab = await this.profilesService.openNewTabForProfile(profile)
+        if (openSftp && typeof (tab as any)?.__openSftpPreferred === 'function') {
+          ;(tab as any).__openSftpPreferred()
         }
-        await this.profilesService.openNewTabForProfile(profile)
       }
     } catch (err) {
       console.warn('[Workbench] Quick connect failed', err)

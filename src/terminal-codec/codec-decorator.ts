@@ -1,10 +1,10 @@
 import { Injectable } from '@angular/core'
 import { TerminalDecorator, BaseTerminalTabComponent } from 'tabby-terminal'
-import { ConfigService } from 'tabby-core'
 import { Subscription } from 'rxjs'
 import { StatefulCodec } from './stateful-codec'
 import { bindSessionCodec } from './session-codec-binding'
 import { WorkbenchEncoding, DEFAULT_WORKBENCH_CONFIG } from '../config/config.model'
+import { WorkbenchSessionConfigService } from '../config/workbench-session-config.service'
 
 @Injectable({ providedIn: 'root' })
 export class CodecRegistryService {
@@ -31,7 +31,7 @@ export class CodecTerminalDecorator extends TerminalDecorator {
   private tabSubs = new WeakMap<BaseTerminalTabComponent, Subscription[]>()
 
   constructor(
-    private config: ConfigService,
+    private sessionConfig: WorkbenchSessionConfigService,
     private codecRegistry: CodecRegistryService
   ) {
     super()
@@ -51,8 +51,10 @@ export class CodecTerminalDecorator extends TerminalDecorator {
         this.codecRegistry.remove(tab)
       }
 
+      const profile = (tab as any).profile || session?.profile
+      const resolved = this.sessionConfig.getSessionConfig(profile).encoding
       const defaultEnc: WorkbenchEncoding =
-        this.config.store?.secureWorkbench?.defaultEncoding || DEFAULT_WORKBENCH_CONFIG.defaultEncoding
+        resolved && resolved !== 'inherit' ? resolved : DEFAULT_WORKBENCH_CONFIG.defaultEncoding
 
       const codec = new StatefulCodec(defaultEnc)
       const unbind = bindSessionCodec(session, codec)

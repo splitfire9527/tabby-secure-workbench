@@ -21,6 +21,7 @@ export const zhCN = {
     theme: '框架配色方案',
     themeDefault: '默认工程灰 (清晰高对比)',
     themeDark: '暗色黑夜 (Dark)',
+    themeBlack: '纯黑 (Black)',
     themeSystem: '跟随系统 (System)',
     themeTabby: '跟随 Tabby (Tabby Theme)',
     importTheme: '导入配色方案...',

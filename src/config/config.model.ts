@@ -18,7 +18,7 @@ export interface DirectoryPair {
 }
 
 export type WorkbenchEncoding = 'UTF-8' | 'GBK' | 'GB2312' | 'GB18030' | 'BIG5'
-export type FrameworkTheme = 'default' | 'dark' | 'system' | 'tabby' | string
+export type FrameworkTheme = 'default' | 'dark' | 'black' | 'system' | 'tabby' | string
 export type UILanguage = 'auto' | 'zh-CN' | 'en-US' | 'tabby'
 
 export interface CustomThemeScheme {
@@ -115,6 +115,8 @@ export interface SessionWorkbenchConfig {
   logging?: Partial<SecureCrtLoggingSettings>
   sftp?: {
     preferredDockMode?: 'bottom' | 'right' | 'full' | 'undock'
+    /** Set when the user picks a dock mode in session options. */
+    dockModeExplicit?: boolean
     autoOpenSFTP?: boolean
     initialLocalPath?: string
     initialRemotePath?: string
@@ -279,13 +281,13 @@ export const DEFAULT_WORKBENCH_CONFIG: WorkbenchConfig = {
       preferredDockMode: 'bottom',
       autoOpenSFTP: false,
       initialLocalPath: '',
-      initialRemotePath: '/root',
+      initialRemotePath: '',
     },
     directoryPairs: [],
   },
   fileTransfer: {
     defaultLocalPath: '',
-    defaultRemotePath: '/root',
+    defaultRemotePath: '',
     pathMode: 'remember',
     showHiddenFiles: false,
     conflictAction: 'prompt',

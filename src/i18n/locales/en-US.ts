@@ -21,6 +21,7 @@ export const enUS = {
     theme: 'Color Theme Scheme',
     themeDefault: 'Default Neutral Gray (High Contrast)',
     themeDark: 'Dark Night',
+    themeBlack: 'Pure Black',
     themeSystem: 'Follow System',
     themeTabby: 'Follow Tabby Theme',
     importTheme: 'Import Color Scheme...',

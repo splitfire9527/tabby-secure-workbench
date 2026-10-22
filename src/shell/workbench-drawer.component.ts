@@ -1416,9 +1416,7 @@ export class WorkbenchDrawerComponent implements OnInit, OnDestroy {
           host,
           port: port || 22,
           ...(user ? { user } : {}),
-          ...(openSftp ? { __autoOpenSftpFull: true } : {}),
         },
-        ...(openSftp ? { __autoOpenSftpFull: true } : {}),
       }
       if (openSftp) {
         this.onOpenSftp(profile)
@@ -1682,10 +1680,10 @@ export class WorkbenchDrawerComponent implements OnInit, OnDestroy {
       if (this.app) {
         this.app.selectTab(existingTab)
       }
-      if (typeof (existingTab as any).__openSftpFull === 'function') {
+      if (typeof (existingTab as any).__openSftpPreferred === 'function') {
+        ;(existingTab as any).__openSftpPreferred()
+      } else if (typeof (existingTab as any).__openSftpFull === 'function') {
         ;(existingTab as any).__openSftpFull()
-      } else if (typeof (existingTab as any).__openSftpRight === 'function') {
-        ;(existingTab as any).__openSftpRight()
       } else {
         ;(existingTab as any).__autoOpenSftpFull = true
       }
@@ -1694,14 +1692,12 @@ export class WorkbenchDrawerComponent implements OnInit, OnDestroy {
 
     if (this.profilesService) {
       try {
-        ;(p as any).__autoOpenSftpFull = true
         const tab = await this.profilesService.openNewTabForProfile(p)
         if (tab) {
-          ;(tab as any).__autoOpenSftpFull = true
-          if (typeof (tab as any).__openSftpFull === 'function') {
+          if (typeof (tab as any).__openSftpPreferred === 'function') {
+            ;(tab as any).__openSftpPreferred()
+          } else if (typeof (tab as any).__openSftpFull === 'function') {
             ;(tab as any).__openSftpFull()
-          } else if (typeof (tab as any).__openSftpRight === 'function') {
-            ;(tab as any).__openSftpRight()
           }
         }
       } catch (err) {

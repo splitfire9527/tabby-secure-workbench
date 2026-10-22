@@ -502,8 +502,9 @@ export class WorkbenchSessionOptionsModalComponent implements OnInit, OnDestroy 
     }
 
     const sw = this.sessionConfigService.getSessionConfig(p)
+    const stored = this.sessionConfigService.getStoredWorkbench(p)
     this.tempWorkbench = {
-      encoding: p.options?.secureWorkbench?.encoding || 'inherit',
+      encoding: stored.encoding || 'inherit',
       terminalType: sw.terminalType || 'xterm-256color',
     }
     this.tempLogging = {
@@ -539,7 +540,7 @@ export class WorkbenchSessionOptionsModalComponent implements OnInit, OnDestroy 
       encoding: this.tempWorkbench.encoding,
       terminalType: this.tempWorkbench.terminalType,
       logging: this.tempLogging,
-      sftp: this.tempSftp,
+      sftp: { ...this.tempSftp, dockModeExplicit: true },
     })
 
     this.config.save()

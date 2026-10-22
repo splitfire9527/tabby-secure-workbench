@@ -450,7 +450,7 @@ export type SessionTemplateType = 'ssh' | 'telnet' | 'serial' | 'raw'
                   <div class="form-group mb-3">
                     <label class="small font-weight-bold text-dark mb-1">终端字符编码</label>
                     <select class="form-control form-control-sm" [(ngModel)]="formData.encoding">
-                      <option value="inherit">继承全局默认 (UTF-8)</option>
+                      <option value="inherit">继承默认会话编码 ({{ inheritedEncoding }})</option>
                       <option value="UTF-8">UTF-8 (通用国际标准)</option>
                       <option value="GBK">GBK (简体中文老旧主机常用)</option>
                       <option value="GB2312">GB2312</option>
@@ -1150,6 +1150,15 @@ export class WorkbenchNewSessionModalComponent implements OnInit, OnDestroy {
     this.cdr.detectChanges()
   }
 
+  get inheritedEncoding(): string {
+    if (this.sessionConfigService) {
+      return this.sessionConfigService.getSessionConfig(null).encoding || 'UTF-8'
+    }
+    return this.config.store?.secureWorkbench?.defaultSession?.encoding
+      || this.config.store?.secureWorkbench?.defaultEncoding
+      || 'UTF-8'
+  }
+
   isFormValid(): boolean {
     if (!this.formData.name?.trim()) return false
     if (this.selectedTemplate === 'ssh' && !this.formData.ssh.host?.trim()) return false
@@ -1227,7 +1236,6 @@ export class WorkbenchNewSessionModalComponent implements OnInit, OnDestroy {
         customDisconnectMsg: this.formData.logging.customDisconnectMsg,
       },
       sftp: {
-        preferredDockMode: 'full',
         autoOpenSFTP: this.formData.sftp.autoOpenSFTP,
         initialLocalPath: this.formData.sftp.initialLocalPath,
         initialRemotePath: this.formData.sftp.initialRemotePath,

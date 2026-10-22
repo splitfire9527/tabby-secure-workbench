@@ -27,17 +27,12 @@ export class WorkbenchSessionConfigService {
    */
   saveDefaultSessionConfig(updated: Partial<DefaultSessionConfig>): void {
     this.ensureWorkbenchConfig()
-    this.config.store.secureWorkbench.defaultSession = {
-      ...this.config.store.secureWorkbench.defaultSession,
-      ...updated,
-      logging: {
-        ...this.config.store.secureWorkbench.defaultSession.logging,
-        ...(updated.logging || {}),
-      },
-      sftp: {
-        ...this.config.store.secureWorkbench.defaultSession.sftp,
-        ...(updated.sftp || {}),
-      },
+    // Tabby's ConfigProxy exposes nested objects as getter-only. Replacing
+    // defaultSession drops the write, so each leaf has to be assigned.
+    const target = this.config.store.secureWorkbench.defaultSession
+    this.assignConfigLeaves(target, updated)
+    if (updated.encoding) {
+      this.config.store.secureWorkbench.defaultEncoding = updated.encoding
     }
     if (updated.closeTabOnExit !== undefined) {
       this.config.store.secureWorkbench.closeTabOnExit = updated.closeTabOnExit
@@ -54,13 +49,14 @@ export class WorkbenchSessionConfigService {
    */
   getSessionConfig(profile: any): SessionWorkbenchConfig {
     const defaultCfg = this.getDefaultSessionConfig()
-    const custom = profile?.options?.secureWorkbench || {}
+    const source = this.rawProfile(profile)
+    const custom = source?.options?.secureWorkbench || {}
 
     // Backwards compatibility with legacy profile.options.loggingConfig
     const legacyLogging = profile?.options?.loggingConfig
 
     return {
-      encoding: custom.encoding && custom.encoding !== 'inherit' ? custom.encoding : defaultCfg.encoding,
+      encoding: this.resolveEncoding(custom.encoding, defaultCfg.encoding),
       terminalType: custom.terminalType || defaultCfg.terminalType,
       colorScheme: custom.colorScheme || defaultCfg.colorScheme || 'SecureCRT System Color Scheme',
       closeTabOnExit: custom.closeTabOnExit ?? defaultCfg.closeTabOnExit ?? false,
@@ -91,10 +87,10 @@ export class WorkbenchSessionConfigService {
           defaultCfg.logging.directory,
       },
       sftp: {
-        preferredDockMode: custom.sftp?.preferredDockMode || defaultCfg.sftp.preferredDockMode,
+        preferredDockMode: this.resolveDockMode(custom.sftp, defaultCfg.sftp?.preferredDockMode),
         autoOpenSFTP: custom.sftp?.autoOpenSFTP ?? defaultCfg.sftp.autoOpenSFTP,
-        initialLocalPath: custom.sftp?.initialLocalPath || '',
-        initialRemotePath: custom.sftp?.initialRemotePath || '',
+        initialLocalPath: custom.sftp?.initialLocalPath || defaultCfg.sftp?.initialLocalPath || '',
+        initialRemotePath: custom.sftp?.initialRemotePath || defaultCfg.sftp?.initialRemotePath || '',
       },
       directoryPairs: custom.directoryPairs || defaultCfg.directoryPairs || [],
     }
@@ -104,41 +100,42 @@ export class WorkbenchSessionConfigService {
    * Save extended workbench configuration for a specific profile.
    */
   saveSessionConfig(profile: any, updated: Partial<SessionWorkbenchConfig>): void {
-    if (!profile) return
-    if (!profile.options) {
-      profile.options = {}
+    const target = this.rawProfile(profile)
+    if (!target) return
+    if (!target.options) {
+      target.options = {}
     }
-    if (!profile.options.secureWorkbench) {
-      profile.options.secureWorkbench = {}
+    if (!target.options.secureWorkbench) {
+      target.options.secureWorkbench = {}
     }
 
-    profile.options.secureWorkbench = {
-      ...profile.options.secureWorkbench,
+    target.options.secureWorkbench = {
+      ...target.options.secureWorkbench,
       ...updated,
       logging: {
-        ...(profile.options.secureWorkbench.logging || {}),
+        ...(target.options.secureWorkbench.logging || {}),
         ...(updated.logging || {}),
       },
       sftp: {
-        ...(profile.options.secureWorkbench.sftp || {}),
+        ...(target.options.secureWorkbench.sftp || {}),
         ...(updated.sftp || {}),
       },
     }
 
     // Keep legacy profile.options.loggingConfig in sync for backward compatibility
     if (updated.logging) {
-      profile.options.loggingConfig = {
-        ...(profile.options.loggingConfig || {}),
+      target.options.loggingConfig = {
+        ...(target.options.loggingConfig || {}),
         ...updated.logging,
       }
     }
 
     if (updated.colorScheme) {
-      profile.options.secureWorkbench.colorScheme = updated.colorScheme
-      profile.colorScheme = updated.colorScheme
+      target.options.secureWorkbench.colorScheme = updated.colorScheme
+      target.colorScheme = updated.colorScheme
     }
     if (updated.closeTabOnExit !== undefined) {
-      profile.options.secureWorkbench.closeTabOnExit = updated.closeTabOnExit
+      target.options.secureWorkbench.closeTabOnExit = updated.closeTabOnExit
     }
 
     this.config.save()
@@ -194,6 +191,78 @@ export class WorkbenchSessionConfigService {
       this.config.save()
     }
     return count
+  }
+
+  /**
+   * Saved workbench fields on the profile, without default-session fallback.
+   * Reads the raw profile because Tabby's ConfigProxy hides secureWorkbench.
+   */
+  getStoredWorkbench(profile: any): any {
+    return this.rawProfile(profile)?.options?.secureWorkbench || {}
+  }
+
+  /**
+   * Tabby wraps an open profile in ConfigProxy. options only exposes SSH fields,
+   * so options.secureWorkbench on the live tab is invisible. The saved profile
+   * in config.store.profiles still has it.
+   */
+  private rawProfile(profile: any): any {
+    if (!profile) return profile
+    const profiles: any[] = this.config.store?.profiles || []
+    const id = profile.id
+    if (id && Array.isArray(profiles)) {
+      const found = profiles.find((item: any) => item && item.id === id)
+      if (found) return found
+    }
+    return profile
+  }
+
+  /**
+   * An explicit session-options choice wins. The new-session form used to stamp
+   * every profile with 'full', which blocked the default dock position.
+   */
+  private resolveDockMode(
+    customSftp: SessionWorkbenchConfig['sftp'],
+    defaultMode: DefaultSessionConfig['sftp']['preferredDockMode'] | undefined
+  ): 'bottom' | 'right' | 'full' | 'undock' {
+    const fallback = defaultMode || 'bottom'
+    const mode = customSftp?.preferredDockMode
+    if (!mode) return fallback
+    if (customSftp?.dockModeExplicit) return mode
+    if (mode === 'full') return fallback
+    return mode
+  }
+
+  /**
+   * Profile encoding wins. Otherwise a customized default-session encoding wins.
+   * A still-default UTF-8 session template falls through to the global default,
+   * so an older global setting keeps working until the two fields are saved together.
+   */
+  private resolveEncoding(
+    profileEncoding: WorkbenchEncoding | 'inherit' | undefined,
+    sessionEncoding: WorkbenchEncoding | undefined
+  ): WorkbenchEncoding {
+    if (profileEncoding && profileEncoding !== 'inherit') {
+      return profileEncoding
+    }
+    const globalEncoding = this.config.store?.secureWorkbench?.defaultEncoding as WorkbenchEncoding | undefined
+    if (sessionEncoding && sessionEncoding !== 'UTF-8') {
+      return sessionEncoding
+    }
+    return globalEncoding || sessionEncoding || 'UTF-8'
+  }
+
+  private assignConfigLeaves(target: any, updated: any): void {
+    if (!target || !updated || typeof updated !== 'object') return
+    for (const key of Object.keys(updated)) {
+      const value = updated[key]
+      if (value === undefined) continue
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        this.assignConfigLeaves(target[key], value)
+      } else {
+        target[key] = value
+      }
+    }
   }
 
   private ensureWorkbenchConfig(): void {

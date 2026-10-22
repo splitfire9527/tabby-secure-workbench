@@ -24,10 +24,48 @@ export interface StartPathInput {
   workingDirectory?: string | null
 }
 
+export function guessLoginHome(user?: string | null): string {
+  const name = (user || '').trim()
+  if (!name || name === 'root') return '/root'
+  return `/home/${name}`
+}
+
+export interface TypeaheadHit {
+  index: number
+  buffer: string
+}
+
+/** Windows-style typeahead: letters jump to the first matching file name. */
+export function locateFileByTypedPrefix(
+  names: string[],
+  buffer: string,
+  key: string,
+  currentName?: string | null
+): TypeaheadHit {
+  const typed = `${buffer}${key}`.toLowerCase()
+  const usable = names
+    .map((name, index) => ({ name, index }))
+    .filter(item => item.name !== '..')
+  const starts = (prefix: string) =>
+    usable.filter(item => item.name.toLowerCase().startsWith(prefix))
+  const full = starts(typed)
+  if (full.length) return { index: full[0].index, buffer: buffer + key }
+  const letter = key.toLowerCase()
+  const repeated = typed.length > 1 && typed.split('').every(ch => ch === letter)
+  const single = starts(letter)
+  if (repeated && single.length) {
+    const current = single.findIndex(item => item.name === currentName)
+    const next = single[(current + 1) % single.length]
+    return { index: next.index, buffer: key }
+  }
+  if (single.length) return { index: single[0].index, buffer: key }
+  return { index: -1, buffer: '' }
+}
+
 export function resolveStartPaths(input: StartPathInput): StoredPaths & { needsWorkingDirectory: boolean } {
   const defaults: StoredPaths = {
     localPath: input.defaultLocal || '',
-    remotePath: input.defaultRemote || '/',
+    remotePath: input.defaultRemote ?? '',
   }
   if (input.mode === 'off') {
     return { ...defaults, needsWorkingDirectory: false }
