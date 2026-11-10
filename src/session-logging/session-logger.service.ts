@@ -61,31 +61,30 @@ export class SessionLoggerService {
 
     const tabSubs: Subscription[] = []
 
-    // Connect to StatefulCodec textDecoded$ stream (single source of truth for display & log)
-    const codec = this.codecRegistry.get(tab) || (tab as any).__workbenchCodec
-    if (codec && codec.textDecoded$) {
-      tabSubs.push(
-        codec.textDecoded$.subscribe((evt) => {
-          logger.writeText(evt.text)
-          const isRaw =
-            !!(effectiveConfig as SecureCrtLogOptions).rawLog ||
-            (effectiveConfig as LoggingConfig).mode === 'raw'
-          if (isRaw && evt.rawBytes) {
-            logger.writeRawBytes(evt.rawBytes)
-          }
+    let codecSubs: Subscription[] = []
+    const bindCodec = () => {
+      codecSubs.forEach(sub => sub.unsubscribe())
+      codecSubs = []
+      const codec = this.codecRegistry.get(tab) || (tab as any).__workbenchCodec
+      if (!codec) return
+      codecSubs.push(codec.textDecoded$.subscribe(evt => logger.writeText(evt.text)))
+      const isRaw = !!effectiveConfig.rawLog || effectiveConfig.mode === 'raw'
+      if (isRaw && codec.rawBytes$) {
+        codecSubs.push(codec.rawBytes$.subscribe(bytes => logger.writeRawBytes(bytes)))
+      }
+      codecSubs.push(codec.encodingChanged$.subscribe(evt => {
+        logger.getAuditWriter()?.writeEvent('encoding-changed', sessionMeta.id, sessionMeta.name, {
+          oldEncoding: evt.oldEncoding, newEncoding: evt.newEncoding, flushedText: evt.flushedText,
         })
-      )
-
-      tabSubs.push(
-        codec.encodingChanged$.subscribe((evt) => {
-          logger.getAuditWriter()?.writeEvent('encoding-changed', sessionMeta.id, sessionMeta.name, {
-            oldEncoding: evt.oldEncoding,
-            newEncoding: evt.newEncoding,
-            flushedText: evt.flushedText,
-          })
-        })
-      )
+      }))
     }
+    bindCodec()
+    if (this.codecRegistry.changed$) {
+      tabSubs.push(this.codecRegistry.changed$.subscribe(changedTab => {
+        if (changedTab === tab) bindCodec()
+      }))
+    }
+    tabSubs.push(new Subscription(() => codecSubs.forEach(sub => sub.unsubscribe())))
 
     if ((tab as any).destroyed$) {
       tabSubs.push(

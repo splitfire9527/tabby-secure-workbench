@@ -25,6 +25,9 @@ export class StatefulCodec {
   private isPaused = false
   private queue: Buffer[] = []
 
+  private rawBytesSubject = new Subject<Buffer>()
+  readonly rawBytes$ = this.rawBytesSubject.asObservable()
+
   private textDecodedSubject = new Subject<DecodedTextEvent>()
   private encodingChangedSubject = new Subject<EncodingChangeEvent>()
 
@@ -71,6 +74,7 @@ export class StatefulCodec {
       return { text: '', utf8Bytes: Buffer.alloc(0) }
     }
 
+    this.rawBytesSubject.next(Buffer.from(data))
     const decodedStr = this.decoder.write(data) || ''
     const utf8Bytes = Buffer.from(decodedStr, 'utf-8')
 
@@ -150,6 +154,7 @@ export class StatefulCodec {
   }
 
   destroy(): void {
+    this.rawBytesSubject.complete()
     this.textDecodedSubject.complete()
     this.encodingChangedSubject.complete()
   }

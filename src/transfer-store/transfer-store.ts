@@ -101,6 +101,7 @@ export class TransferStore {
     const idx = current.findIndex(t => t.id === id)
     if (idx === -1) return
 
+    if (['cancelled', 'failed', 'succeeded'].includes(current[idx].status)) return
     const updated = [...current]
     const task = { ...updated[idx], status }
     if (error) task.error = error
@@ -128,6 +129,7 @@ export class TransferStore {
 
     const updated = [...current]
     const task = updated[idx]
+    if (['cancelled', 'failed', 'succeeded'].includes(task.status)) return
     if (task.status === 'queued') {
       task.status = 'running'
     }
@@ -136,6 +138,11 @@ export class TransferStore {
 
     updated[idx] = { ...task }
     this.tasksSubject.next(updated)
+  }
+
+  assertActive(id: string): void {
+    const task = this.tasks.find(t => t.id === id)
+    if (!task || task.status === 'cancelled') throw new Error('Transfer cancelled')
   }
 
   cancelTask(id: string): void {

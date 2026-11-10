@@ -1,3 +1,4 @@
+import { atomicDownload } from '../sftp-plus/atomic-download'
 import { Component, Input, Output, EventEmitter, OnInit, OnDestroy, HostListener, Optional } from '@angular/core'
 import { Subscription } from 'rxjs'
 import { TransferStore } from '../transfer-store/transfer-store'
@@ -532,11 +533,8 @@ export interface SftpSessionView {
             <span>上传到远程</span>
             <span class="ctx-shortcut">Enter</span>
           </div>
-          <div *ngIf="contextMenuFile && contextMenuFile.isDirectory && contextMenuFile.name !== '..'" class="ctx-item" (click)="contextUploadDirectory(true)">
-            <span>🚀 压缩打包上传 (tar加速)</span>
-          </div>
           <div *ngIf="contextMenuFile && contextMenuFile.isDirectory && contextMenuFile.name !== '..'" class="ctx-item" (click)="contextUploadDirectory(false)">
-            <span>📁 常规递归上传</span>
+            <span>📁 上传目录</span>
           </div>
           <div *ngIf="contextMenuFile && contextMenuFile.name !== '..'" class="ctx-item" (click)="openRenameDialog(contextMenuView!, 'local'); closeContextMenu()">
             <span>重命名</span>
@@ -564,11 +562,8 @@ export interface SftpSessionView {
             <span>下载到本地</span>
             <span class="ctx-shortcut">Enter</span>
           </div>
-          <div *ngIf="contextMenuFile && contextMenuFile.isDirectory && contextMenuFile.name !== '..'" class="ctx-item" (click)="contextDownloadDirectory(true)">
-            <span>🚀 压缩打包下载 (tar加速)</span>
-          </div>
           <div *ngIf="contextMenuFile && contextMenuFile.isDirectory && contextMenuFile.name !== '..'" class="ctx-item" (click)="contextDownloadDirectory(false)">
-            <span>📁 常规递归下载</span>
+            <span>📁 下载目录</span>
           </div>
           <div *ngIf="contextMenuFile && contextMenuFile.name !== '..'" class="ctx-item" (click)="copyRemoteFile(contextMenuView!); closeContextMenu()">
             <span>复制 (跨连接)</span>
@@ -1554,15 +1549,23 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
   }
 
+  private remoteRequests = new WeakMap<SftpSessionView, number>()
+
   async loadRemoteFiles(v?: SftpSessionView): Promise<void> {
     const view = v || this.activeView
     if (!view) return
+    const request = (this.remoteRequests.get(view) || 0) + 1
+    this.remoteRequests.set(view, request)
+    const requestedPath = view.remotePath
+    const isCurrent = () => this.remoteRequests.get(view) === request && view.remotePath === requestedPath
     view.remotePathInput = view.remotePath
 
     const sftp = await this.getRealSftpSession()
     if (sftp) {
       try {
-        const rawFiles = await sftp.readdir(view.remotePath)
+        if (!isCurrent()) return
+        const rawFiles = await sftp.readdir(requestedPath)
+        if (!isCurrent()) return
         const items: SftpFileItem[] = (rawFiles || []).map((f: any) => {
           const isDir = f.isDirectory === true
           return {
@@ -1597,33 +1600,17 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
         return
       } catch (err: any) {
         console.warn('[Workbench SFTP] Failed to readdir:', view.remotePath, err)
-        // If /root failed, try / as fallback
-        if (view.remotePath === '/root') {
+        if (!isCurrent()) return
+        if (requestedPath === '/root') {
           view.remotePath = '/'
-          view.remotePathInput = '/'
-          try {
-            const rawFiles = await sftp.readdir('/')
-            const items: SftpFileItem[] = (rawFiles || []).map((f: any) => {
-              const isDir = f.isDirectory === true
-              return {
-                name: f.name,
-                isDirectory: isDir,
-                size: f.size || 0,
-                mode: typeof f.mode === 'number' ? this.formatPermissions(f.mode, isDir) : (f.mode || (isDir ? 'drwxr-xr-x' : '-rw-r--r--')),
-                modified: f.modified ? this.formatDate(new Date(f.modified)) : '',
-                modifiedMs: f.modified ? new Date(f.modified).getTime() : 0,
-              }
-            })
-            view.remoteFiles = !view.showHiddenRemote ? items.filter((f) => !f.name.startsWith('.')) : items
-            this.applyRemoteFilter(view)
-            view.selectedRemoteFile = null
-            return
-          } catch {}
+          await this.loadRemoteFiles(view)
+          return
         }
         this.notifications.error(`无法读取远程目录 ${view.remotePath}: ${err?.message || err}`)
       }
     }
 
+    if (!isCurrent()) return
     // If no real SFTP session is available, clear remote list (no fake mock data!)
     view.remoteFiles = []
     this.applyRemoteFilter(view)
@@ -1909,6 +1896,7 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
 
     try {
       await this.uploader.uploadWithAtomicOverwrite(client, src, dst, {
+        assertActive: () => this.store.assertActive(taskId),
         onProgress: bytes => this.store.updateProgress(taskId, Math.min(bytes, fileSize)),
       })
       this.store.updateTaskStatus(taskId, 'succeeded')
@@ -1916,6 +1904,7 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
       this.notifications.info(`上传完成: ${fileName}`)
       this.loadRemoteFiles(view)
     } catch (err: any) {
+      if (this.store.tasks.find(t => t.id === taskId)?.status === 'cancelled') return
       this.store.updateTaskStatus(taskId, 'failed', err?.message)
       this.ensureAudit().record('fail', taskId, src, dst, { error: err?.message })
       this.notifications.error(`上传失败: ${err?.message || err}`)
@@ -1934,7 +1923,7 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
 
     const scan = this.tarChannel.scanLocalDir(localPath)
     const totalBytes = scan.size > 0 ? scan.size : 1024 * 1024
-    const taskId = `up-dir-${Date.now()}`
+    const taskId = `up-dir-${Date.now()}-${Math.random().toString(36).slice(2)}`
 
     this.store.addTask({
       id: taskId,
@@ -1947,28 +1936,8 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
     this.store.updateTaskStatus(taskId, 'running')
     this.ensureAudit().record('start', taskId, localPath, remoteTarget)
 
-    let done = false
-    if (preferTar) {
-      try {
-        const result = await this.tarChannel.tryUploadDir(localPath, remoteTarget, this.store, taskId)
-        if (result === 'succeeded') {
-          this.store.updateProgress(taskId, totalBytes)
-          this.store.updateTaskStatus(taskId, 'succeeded')
-          this.ensureAudit().record('complete', taskId, localPath, remoteTarget)
-          this.notifications.info(`目录上传完成 (tar压缩加速): ${baseName}`)
-          this.loadRemoteFiles(view)
-          done = true
-        } else {
-          console.log('[SFTP+] tar acceleration fallback to regular upload:', localPath)
-        }
-      } catch (err) {
-        console.warn('[SFTP+] tar upload error, falling back:', err)
-      }
-    }
-
-    if (!done) {
-      await this.uploadDirectoryRegular(view, localPath, remoteTarget, taskId, totalBytes)
-    }
+    // Per-file conflict and cancellation semantics must also hold for directories.
+    await this.uploadDirectoryRegular(view, localPath, remoteTarget, taskId, totalBytes)
   }
 
   async uploadDirectoryRegular(
@@ -1991,12 +1960,21 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
     let processedBytes = 0
 
     const uploadRecursive = async (srcDir: string, dstDir: string) => {
+      this.store.assertActive(taskId)
+      try {
+        const target = await client.lstat(dstDir)
+        if (target.isSymbolicLink() || !target.isDirectory()) throw new Error(`Unsafe directory target: ${dstDir}`)
+      } catch (error) { if (!isMissingRemoteFile(error)) throw error }
       try {
         await sftp.mkdir(dstDir)
-      } catch {}
+      } catch (error) {
+        const existing = await client.lstat(dstDir)
+        if (existing.isSymbolicLink() || !existing.isDirectory()) throw error
+      }
 
       const entries = fs.readdirSync(srcDir, { withFileTypes: true })
       for (const entry of entries) {
+        this.store.assertActive(taskId)
         const srcItem = path.join(srcDir, entry.name)
         const dstItem = path.posix.join(dstDir, entry.name)
         const isAsar = entry.name.toLowerCase().endsWith('.asar')
@@ -2018,10 +1996,15 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
             const prompted = action === 'prompt' ? await this.askConflict(entry.name) : null
             const decision = decideConflict(action, prompted)
             this.ensureAudit().record('conflict-decision', taskId, srcItem, dstItem, { decision })
-            if (decision !== 'overwrite') continue
+            if (decision === 'cancel') {
+              this.store.cancelTask(taskId)
+              this.store.assertActive(taskId)
+            }
+            if (decision === 'skip') continue
           }
           const fileBase = processedBytes
           await this.uploader.uploadWithAtomicOverwrite(client, srcItem, dstItem, {
+            assertActive: () => this.store.assertActive(taskId),
             onProgress: bytes => {
               this.store.updateProgress(taskId, Math.min(fileBase + bytes, totalBytes || fileBase + bytes))
             },
@@ -2035,15 +2018,30 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
 
     try {
       await uploadRecursive(localPath, remoteTarget)
+      this.store.assertActive(taskId)
       this.store.updateTaskStatus(taskId, 'succeeded')
       this.ensureAudit().record('complete', taskId, localPath, remoteTarget)
       this.notifications.info(`目录上传完成: ${baseName}`)
       this.loadRemoteFiles(view)
     } catch (err: any) {
+      if (this.store.tasks.find(t => t.id === taskId)?.status === 'cancelled') return
       this.store.updateTaskStatus(taskId, 'failed', err?.message)
       this.ensureAudit().record('fail', taskId, localPath, remoteTarget, { error: err?.message })
       this.notifications.error(`目录上传失败: ${err?.message || err}`)
     }
+  }
+
+  private async allowLocalDownload(destination: string, taskId: string): Promise<boolean> {
+    this.store.assertActive(taskId)
+    try { fs.lstatSync(destination) } catch (error: any) {
+      if (error.code === 'ENOENT') return true
+      throw error
+    }
+    const action = this.fileTransferConfig().conflictAction
+    const decision = decideConflict(action, action === 'prompt' ? await this.askConflict(path.basename(destination)) : null)
+    this.store.assertActive(taskId)
+    if (decision === 'cancel') this.store.cancelTask(taskId)
+    return decision === 'overwrite'
   }
 
   async downloadSelectedFile(view: SftpSessionView): Promise<void> {
@@ -2056,7 +2054,7 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
     const src = path.posix.join(view.remotePath, file.name)
     const dst = path.join(view.localPath, file.name)
 
-    const taskId = `dl-${Date.now()}`
+    const taskId = `dl-${Date.now()}-${Math.random().toString(36).slice(2)}`
     this.store.addTask({
       id: taskId,
       name: `${file.name} (下载)`,
@@ -2076,22 +2074,18 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
     }
 
     try {
-      const handle = await sftp.open(src, 1)
-      const fd = fs.openSync(dst, 'w')
-      let pos = 0
-      while (true) {
-        const chunk = await handle.read()
-        if (!chunk || chunk.length === 0) break
-        fs.writeSync(fd, Buffer.from(chunk))
-        pos += chunk.length
-        this.store.updateProgress(taskId, Math.min(pos, file.size || pos))
+      if (!await this.allowLocalDownload(dst, taskId)) {
+        this.store.updateTaskStatus(taskId, 'cancelled', 'Skipped or cancelled')
+        return
       }
-      fs.closeSync(fd)
-      await handle.close()
+      await atomicDownload(sftp, src, dst, () => this.store.assertActive(taskId), bytes => {
+        this.store.updateProgress(taskId, bytes)
+      })
       this.store.updateTaskStatus(taskId, 'succeeded')
       this.notifications.info(`下载完成: ${file.name}`)
       this.loadLocalFiles(view)
     } catch (err: any) {
+      if (this.store.tasks.find(t => t.id === taskId)?.status === 'cancelled') return
       this.store.updateTaskStatus(taskId, 'failed', err?.message)
       this.notifications.error(`下载失败: ${err?.message || err}`)
     }
@@ -2101,7 +2095,7 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
     if (!this.store) return
     const remoteDir = path.posix.join(view.remotePath, file.name)
     const localTarget = path.join(view.localPath, file.name)
-    const taskId = `dl-dir-${Date.now()}`
+    const taskId = `dl-dir-${Date.now()}-${Math.random().toString(36).slice(2)}`
 
     this.store.addTask({
       id: taskId,
@@ -2113,26 +2107,7 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
     })
     this.store.updateTaskStatus(taskId, 'running')
 
-    let done = false
-    if (preferTar) {
-      try {
-        const result = await this.tarChannel.tryDownloadDir(remoteDir, localTarget, this.store, taskId)
-        if (result === 'succeeded') {
-          this.store.updateTaskStatus(taskId, 'succeeded')
-          this.notifications.info(`目录下载完成 (tar压缩加速): ${file.name}`)
-          this.loadLocalFiles(view)
-          done = true
-        } else {
-          console.log('[SFTP+] tar download fallback to regular download:', remoteDir)
-        }
-      } catch (err) {
-        console.warn('[SFTP+] tar download error, falling back:', err)
-      }
-    }
-
-    if (!done) {
-      await this.downloadDirectoryRegular(view, remoteDir, localTarget, taskId)
-    }
+    await this.downloadDirectoryRegular(view, remoteDir, localTarget, taskId)
   }
 
   async downloadDirectoryRegular(
@@ -2152,6 +2127,11 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
     let processedBytes = 0
 
     const downloadRecursive = async (rDir: string, lDir: string) => {
+      this.store.assertActive(taskId)
+      try {
+        const st = fs.lstatSync(lDir)
+        if (!st.isDirectory() || st.isSymbolicLink()) throw new Error(`Unsafe directory target: ${lDir}`)
+      } catch (error: any) { if (error.code !== 'ENOENT') throw error }
       fs.mkdirSync(lDir, { recursive: true })
       let entries: any[] = []
       try {
@@ -2162,6 +2142,7 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
 
       for (const entry of entries) {
         if (entry.name === '.' || entry.name === '..') continue
+        if (!entry.name || entry.name.includes('/') || entry.name.includes('\\')) throw new Error('Invalid remote filename')
         const rItem = path.posix.join(rDir, entry.name)
         const lItem = path.join(lDir, entry.name)
         const isDir = entry.isDirectory
@@ -2178,17 +2159,15 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
           await downloadRecursive(rItem, lItem)
         } else {
           try {
-            const handle = await sftp.open(rItem, 1)
-            const fd = fs.openSync(lItem, 'w')
-            while (true) {
-              const chunk = await handle.read()
-              if (!chunk || chunk.length === 0) break
-              fs.writeSync(fd, Buffer.from(chunk))
-              processedBytes += chunk.length
-              this.store.updateProgress(taskId, processedBytes)
+            if (!await this.allowLocalDownload(lItem, taskId)) {
+              this.store.assertActive(taskId)
+              continue
             }
-            fs.closeSync(fd)
-            await handle.close()
+            const base = processedBytes
+            await atomicDownload(sftp, rItem, lItem, () => this.store.assertActive(taskId), bytes => {
+              processedBytes = base + bytes
+              this.store.updateProgress(taskId, processedBytes)
+            })
           } catch (fileErr: any) {
             throw new Error(`${rItem}: ${fileErr?.message || fileErr}`)
           }
@@ -2198,10 +2177,12 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
 
     try {
       await downloadRecursive(remoteDir, localTarget)
+      this.store.assertActive(taskId)
       this.store.updateTaskStatus(taskId, 'succeeded')
       this.notifications.info(`目录下载完成: ${baseName}`)
       this.loadLocalFiles(view)
     } catch (err: any) {
+      if (this.store.tasks.find(t => t.id === taskId)?.status === 'cancelled') return
       this.store.updateTaskStatus(taskId, 'failed', err?.message)
       this.notifications.error(`目录下载失败: ${err?.message || err}`)
     }
@@ -2632,7 +2613,7 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
   contextUploadDirectory(preferTar = true): void {
     if (this.contextMenuFile && this.contextMenuView) {
       this.contextMenuView.selectedLocalFile = this.contextMenuFile
-      const method = preferTar ? '压缩打包加速上传 (tar)' : '常规递归逐文件上传'
+      const method = '安全逐文件上传'
       const ok = window.confirm(
         `确定使用【${method}】将目录 "${this.contextMenuFile.name}" 上传到远程 "${this.contextMenuView.remotePath}" 吗？`
       )
@@ -2659,7 +2640,7 @@ export class WorkbenchSftpPaneComponent implements OnInit, OnDestroy {
   contextDownloadDirectory(preferTar = true): void {
     if (this.contextMenuFile && this.contextMenuView) {
       this.contextMenuView.selectedRemoteFile = this.contextMenuFile
-      const method = preferTar ? '压缩打包加速下载 (tar)' : '常规递归逐文件下载'
+      const method = '安全逐文件下载'
       const ok = window.confirm(
         `确定使用【${method}】将远程目录 "${this.contextMenuFile.name}" 下载到本地 "${this.contextMenuView.localPath}" 吗？`
       )

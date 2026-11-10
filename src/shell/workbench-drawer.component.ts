@@ -1675,8 +1675,10 @@ export class WorkbenchDrawerComponent implements OnInit, OnDestroy {
     const existingTab = allTabs.find(
       (t: any) =>
         t.profile &&
-        (t.profile.id === p.id ||
-          (t.profile.options?.host && t.profile.options.host === p.options?.host))
+        p.id && t.profile.id === p.id &&
+        t.profile.options?.host === p.options?.host &&
+        (t.profile.options?.port || 22) === (p.options?.port || 22) &&
+        t.profile.options?.user === p.options?.user
     )
     if (existingTab) {
       if (this.app) {

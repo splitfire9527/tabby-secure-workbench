@@ -48,8 +48,10 @@ export class OverwriteUploader {
     options: {
       onProgress?: (transferredBytes: number) => void
       verifySize?: boolean
+      assertActive?: () => void
     } = {}
   ): Promise<OverwriteUploadResult> {
+    options.assertActive?.()
     // Check local source file
     const localStats = fs.statSync(localSourcePath)
     const expectedSize = localStats.size
@@ -102,7 +104,12 @@ export class OverwriteUploader {
 
     try {
       // Step 3: Upload to temporary file
-      await client.uploadFile(localSourcePath, remoteTempPath, options.onProgress)
+      options.assertActive?.()
+      await client.uploadFile(localSourcePath, remoteTempPath, bytes => {
+        options.assertActive?.()
+        options.onProgress?.(bytes)
+      })
+      options.assertActive?.()
 
       if (options.verifySize) {
         const tempStats = await client.lstat(remoteTempPath)
@@ -119,6 +126,7 @@ export class OverwriteUploader {
       }
 
       // Step 5: Atomic rename(temporary, target)
+      options.assertActive?.()
       await client.rename(remoteTempPath, remoteTargetPath)
 
       return {

@@ -1,57 +1,45 @@
-/**
- * Holds incomplete CSI/OSC sequences so a control sequence split across chunks
- * never leaks into the transcript. Complete sequences are dropped. Visible text is returned.
- */
+/** Streaming control parser: retain state, never retain an unbounded control payload. */
 export class VisibleTextFilter {
-  private held = ''
+  private state: 'text' | 'escape' | 'csi' | 'string' | 'stringEscape' = 'text'
+  private osc = false
 
   push(chunk: string): string {
-    const data = this.held + chunk
-    this.held = ''
     let out = ''
-    for (let i = 0; i < data.length; i++) {
-      if (data[i] !== '\u001b') {
-        out += data[i]
+    for (const char of chunk) {
+      if (this.state === 'string' || this.state === 'stringEscape') {
+        if (char === '\u009c' || (this.osc && char === '\u0007') ||
+            (this.state === 'stringEscape' && char === '\\')) {
+          this.state = 'text'
+        } else {
+          this.state = char === '\u001b' ? 'stringEscape' : 'string'
+        }
         continue
       }
-      const consumed = consumeEscape(data.slice(i))
-      if (consumed == null) {
-        this.held = data.slice(i)
-        break
+      if (char === '\u001b') { this.state = 'escape'; continue }
+      if (this.state === 'escape') {
+        if (char === '[') this.state = 'csi'
+        else if (']PX^_'.includes(char)) { this.osc = char === ']'; this.state = 'string' }
+        else if (char >= ' ' && char <= '/') { /* escape intermediate */ }
+        else this.state = 'text'
+        continue
       }
-      i += consumed - 1
+      if (this.state === 'csi') {
+        if (char >= '@' && char <= '~') this.state = 'text'
+        continue
+      }
+      if (char === '\u009b') { this.state = 'csi'; continue }
+      if ('\u0090\u009d\u009e\u009f\u0098'.includes(char)) {
+        this.osc = char === '\u009d'
+        this.state = 'string'
+        continue
+      }
+      if (char === '\t' || char === '\n' || char === '\r' || (char >= ' ' && !(char >= '\u007f' && char <= '\u009f'))) out += char
     }
     return out
   }
 
   flush(): string {
-    const rest = this.held
-    this.held = ''
-    if (!rest) return ''
-    if (rest[0] === '\u001b') return ''
-    return rest
+    this.state = 'text'
+    return ''
   }
-}
-
-function consumeEscape(sequence: string): number | null {
-  if (sequence.length < 2) return null
-  const kind = sequence[1]
-  if (kind === '[') {
-    for (let i = 2; i < sequence.length; i++) {
-      const code = sequence.charCodeAt(i)
-      if (code >= 0x40 && code <= 0x7e) return i + 1
-    }
-    return null
-  }
-  if (kind === ']') {
-    for (let i = 2; i < sequence.length; i++) {
-      if (sequence[i] === '\u0007') return i + 1
-      if (sequence[i] === '\u001b') {
-        if (i + 1 >= sequence.length) return null
-        if (sequence[i + 1] === '\\') return i + 2
-      }
-    }
-    return null
-  }
-  return 2
 }

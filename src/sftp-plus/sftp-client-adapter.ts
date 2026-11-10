@@ -27,13 +27,16 @@ export function adaptSftpSession(sftp: any): RemoteSftpClient {
       return asStats(stat)
     },
     async uploadFile(localPath: string, remotePath: string, onProgress?: (n: number) => void): Promise<void> {
-      if (typeof sftp.uploadFile === 'function') {
+      if (typeof sftp.open !== 'function' && typeof sftp.uploadFile === 'function') {
         await sftp.uploadFile(localPath, remotePath, onProgress)
         return
       }
       const handle = await sftp.open(remotePath, 2 | 8 | 16)
-      const fd = fs.openSync(localPath, 'r')
+      let fd: number | undefined
       try {
+        // Set restrictive permissions before any bytes are written.
+        await sftp.chmod(remotePath, 0o600)
+        fd = fs.openSync(localPath, 'r')
         const buf = Buffer.alloc(64 * 1024)
         let pos = 0
         let bytesRead = 0
@@ -43,8 +46,7 @@ export function adaptSftpSession(sftp: any): RemoteSftpClient {
           onProgress?.(pos)
         }
       } finally {
-        fs.closeSync(fd)
-        await handle.close()
+        try { if (fd !== undefined) fs.closeSync(fd) } finally { await handle.close() }
       }
     },
     chmod(remotePath: string, mode: number): Promise<void> {

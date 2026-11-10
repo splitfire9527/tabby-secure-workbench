@@ -77,6 +77,7 @@ describe('WorkbenchSftpPaneComponent - Zero Mock Policy & Real SFTP', () => {
       addTask: jest.fn(),
       updateTaskStatus: jest.fn(),
       updateProgress: jest.fn(),
+      assertActive: jest.fn(),
     } as any
 
     await component.pasteFromOtherConnection(view)
@@ -132,7 +133,7 @@ describe('WorkbenchSftpPaneComponent - Zero Mock Policy & Real SFTP', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('should upload directory using TarChannel when preferTar is true and tar is available', async () => {
+  it('should route directory uploads through per-file policy even when tar is requested', async () => {
     const fs = require('fs')
     const path = require('path')
     const tmpDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'dir-upload-test-'))
@@ -145,9 +146,11 @@ describe('WorkbenchSftpPaneComponent - Zero Mock Policy & Real SFTP', () => {
       addTask: jest.fn(),
       updateTaskStatus: jest.fn(),
       updateProgress: jest.fn(),
+      assertActive: jest.fn(),
     } as any
 
     jest.spyOn(component.tarChannel, 'tryUploadDir').mockResolvedValue('succeeded')
+    const regular = jest.spyOn(component, 'uploadDirectoryRegular').mockResolvedValue(undefined)
     jest.spyOn(component, 'loadRemoteFiles').mockImplementation(() => Promise.resolve())
 
     await component.uploadDirectoryFromPath(view, subFolder, true)
@@ -159,14 +162,13 @@ describe('WorkbenchSftpPaneComponent - Zero Mock Policy & Real SFTP', () => {
         targetPath: '/remote/dest/my-folder',
       })
     )
-    expect(component.tarChannel.tryUploadDir).toHaveBeenCalled()
-    expect(component.store.updateTaskStatus).toHaveBeenCalledWith(expect.any(String), 'succeeded')
-    expect(mockNotifications.info).toHaveBeenCalledWith(expect.stringContaining('tar压缩加速'))
+    expect(component.tarChannel.tryUploadDir).not.toHaveBeenCalled()
+    expect(regular).toHaveBeenCalledWith(view, subFolder, '/remote/dest/my-folder', expect.any(String), expect.any(Number))
 
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('should fallback to regular recursive upload when TarChannel returns fallback', async () => {
+  it('should upload each directory file through a protected temporary path', async () => {
     const fs = require('fs')
     const path = require('path')
     const tmpDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'dir-fallback-test-'))
@@ -179,6 +181,7 @@ describe('WorkbenchSftpPaneComponent - Zero Mock Policy & Real SFTP', () => {
       addTask: jest.fn(),
       updateTaskStatus: jest.fn(),
       updateProgress: jest.fn(),
+      assertActive: jest.fn(),
     } as any
 
     const mockSftp = {
@@ -202,7 +205,7 @@ describe('WorkbenchSftpPaneComponent - Zero Mock Policy & Real SFTP', () => {
 
     await component.uploadDirectoryFromPath(view, subFolder, true)
 
-    expect(component.tarChannel.tryUploadDir).toHaveBeenCalled()
+    expect(component.tarChannel.tryUploadDir).not.toHaveBeenCalled()
     expect(mockSftp.mkdir).toHaveBeenCalledWith('/remote/dest/fallback-folder')
     expect(mockSftp.open).toHaveBeenCalled()
     const stagedPath = mockSftp.open.mock.calls[0][0]
@@ -213,15 +216,17 @@ describe('WorkbenchSftpPaneComponent - Zero Mock Policy & Real SFTP', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('should download directory using TarChannel when available and fallback if needed', async () => {
+  it('should route directory downloads through per-file policy', async () => {
     const view = component.createView('Dir Download View', '/local/dest', '/remote')
     component.store = {
       addTask: jest.fn(),
       updateTaskStatus: jest.fn(),
       updateProgress: jest.fn(),
+      assertActive: jest.fn(),
     } as any
 
     jest.spyOn(component.tarChannel, 'tryDownloadDir').mockResolvedValue('succeeded')
+    const regular = jest.spyOn(component, 'downloadDirectoryRegular').mockResolvedValue(undefined)
     jest.spyOn(component, 'loadLocalFiles').mockImplementation(() => {})
 
     const folderItem = {
@@ -233,13 +238,7 @@ describe('WorkbenchSftpPaneComponent - Zero Mock Policy & Real SFTP', () => {
 
     await component.downloadDirectory(view, folderItem, true)
 
-    expect(component.tarChannel.tryDownloadDir).toHaveBeenCalledWith(
-      '/remote/remote-app',
-      '/local/dest/remote-app',
-      component.store,
-      expect.any(String)
-    )
-    expect(component.store.updateTaskStatus).toHaveBeenCalledWith(expect.any(String), 'succeeded')
-    expect(mockNotifications.info).toHaveBeenCalledWith(expect.stringContaining('tar压缩加速'))
+    expect(component.tarChannel.tryDownloadDir).not.toHaveBeenCalled()
+    expect(regular).toHaveBeenCalledWith(view, '/remote/remote-app', '/local/dest/remote-app', expect.any(String))
   })
 })

@@ -1,3 +1,4 @@
+import { atomicDownload } from '../sftp-plus/atomic-download'
 import { Injectable } from '@angular/core'
 import * as path from 'path'
 import * as os from 'os'
@@ -85,9 +86,9 @@ export class CrossTransferRelayService {
       let bytesTransferred = 0
       if (item.isDirectory) {
         fs.mkdirSync(localTempPath, { recursive: true, mode: 0o700 })
-        await this.stageDirectory(sourceClient, item.remotePath, localTempPath)
+        await this.stageDirectory(sourceClient, item.remotePath, localTempPath, () => targetStore.assertActive(taskId))
         if (isCancelled || sourceClient.closed) throw new Error(isCancelled ? 'Transfer cancelled by user' : 'Source connection is disconnected')
-        bytesTransferred = await this.uploadStagedDirectory(targetClient, localTempPath, targetPath)
+        bytesTransferred = await this.uploadStagedDirectory(targetClient, localTempPath, targetPath, () => targetStore.assertActive(taskId))
       } else {
         await this.stageFromSource(sourceClient, item.remotePath, localTempPath, bytes => {
           if (isCancelled) throw new Error('Transfer cancelled by user')
@@ -100,6 +101,7 @@ export class CrossTransferRelayService {
         }
         const fileSize = fs.statSync(localTempPath).size
         await this.uploader.uploadWithAtomicOverwrite(targetClient, localTempPath, targetPath, {
+          assertActive: () => targetStore.assertActive(taskId),
           onProgress: bytes => {
             if (isCancelled) throw new Error('Transfer cancelled by user')
             targetStore.updateProgress(taskId, Math.floor(fileSize * 0.5 + bytes * 0.5))
@@ -138,17 +140,20 @@ export class CrossTransferRelayService {
     if (!client || client.closed) throw new Error('Source connection is disconnected')
   }
 
-  private async stageDirectory(client: any, remotePath: string, localDir: string): Promise<void> {
+  private async stageDirectory(client: any, remotePath: string, localDir: string, assertActive: () => void): Promise<void> {
     this.assertSourceOpen(client)
+    assertActive()
     fs.mkdirSync(localDir, { recursive: true, mode: 0o700 })
     const entries = await this.listRemote(client, remotePath)
     for (const entry of entries) {
       if (entry.name === '.' || entry.name === '..') continue
       this.assertSourceOpen(client)
+      assertActive()
+      if (!entry.name || entry.name.includes('/') || entry.name.includes('\\')) throw new Error('Invalid remote filename')
       const remoteChild = path.posix.join(remotePath, entry.name)
       const localChild = path.join(localDir, entry.name)
-      if (entry.isDirectory) await this.stageDirectory(client, remoteChild, localChild)
-      else await this.stageFromSource(client, remoteChild, localChild)
+      if (entry.isDirectory) await this.stageDirectory(client, remoteChild, localChild, assertActive)
+      else await this.stageFromSource(client, remoteChild, localChild, assertActive)
     }
   }
 
@@ -175,8 +180,10 @@ export class CrossTransferRelayService {
   private async uploadStagedDirectory(
     client: RemoteSftpClient,
     localDir: string,
-    remoteDir: string
+    remoteDir: string,
+    assertActive: () => void,
   ): Promise<number> {
+    assertActive()
     if (typeof client.mkdir === 'function') {
       try {
         await client.mkdir(remoteDir)
@@ -189,9 +196,9 @@ export class CrossTransferRelayService {
       const localChild = path.join(localDir, entry.name)
       const remoteChild = path.posix.join(remoteDir, entry.name)
       if (entry.isDirectory()) {
-        bytes += await this.uploadStagedDirectory(client, localChild, remoteChild)
+        bytes += await this.uploadStagedDirectory(client, localChild, remoteChild, assertActive)
       } else {
-        const result = await this.uploader.uploadWithAtomicOverwrite(client, localChild, remoteChild)
+        const result = await this.uploader.uploadWithAtomicOverwrite(client, localChild, remoteChild, { assertActive })
         bytes += result.bytesUploaded
       }
     }
@@ -205,6 +212,14 @@ export class CrossTransferRelayService {
     onProgress?: (bytes: number) => void
   ): Promise<void> {
     this.assertSourceOpen(client)
+
+    let lastBytes = 0
+    if (typeof client.open === 'function') {
+      return atomicDownload(client, remotePath, localTempPath, () => {
+        this.assertSourceOpen(client)
+        onProgress?.(lastBytes)
+      }, bytes => { lastBytes = bytes; onProgress?.(bytes) })
+    }
 
     if (typeof client.downloadFile === 'function') {
       return client.downloadFile(remotePath, localTempPath, onProgress)

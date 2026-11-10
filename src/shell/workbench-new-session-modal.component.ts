@@ -263,7 +263,7 @@ export type SessionTemplateType = 'ssh' | 'telnet' | 'serial' | 'raw'
                     </div>
 
                     <div class="form-group mb-2" *ngIf="formData.ssh.authMethod === 'password'">
-                      <label class="small font-weight-bold text-dark mb-1">密码 (留空则在连接时提示)</label>
+                      <label class="small font-weight-bold text-dark mb-1">密码（仅用于本次连接，不保存）</label>
                       <input
                         type="password"
                         class="form-control form-control-sm font-mono"
@@ -966,6 +966,8 @@ export class WorkbenchNewSessionModalComponent implements OnInit, OnDestroy {
     },
   }
 
+  private readonly defaultFormData = JSON.parse(JSON.stringify(this.formData))
+  private originalProfile: any = null
   private subs: Subscription[] = []
 
   constructor(
@@ -1035,6 +1037,10 @@ export class WorkbenchNewSessionModalComponent implements OnInit, OnDestroy {
   }
 
   duplicateFromProfile(p: any): void {
+    this.formData = JSON.parse(JSON.stringify(this.defaultFormData))
+    this.originalProfile = null
+    this.isEditing = false
+    this.editingProfileId = null
     if (!p) return
     const type = (p.type || 'ssh').toLowerCase()
     if (type.includes('serial')) this.selectedTemplate = 'serial'
@@ -1065,6 +1071,8 @@ export class WorkbenchNewSessionModalComponent implements OnInit, OnDestroy {
   }
 
   openWithProfile(p: any): void {
+    this.formData = JSON.parse(JSON.stringify(this.defaultFormData))
+    this.originalProfile = p?.id ? JSON.parse(JSON.stringify(p)) : null
     this.loadExistingProfiles()
     this.isOpen = true
     this.activeTab = 'general'
@@ -1102,10 +1110,12 @@ export class WorkbenchNewSessionModalComponent implements OnInit, OnDestroy {
       const type = (p.type || 'ssh').toLowerCase()
       if (type.includes('serial')) {
         this.selectedTemplate = 'serial'
+        Object.assign(this.formData.serial, p.options || {})
         this.formData.serial.port = p.options?.port || p.options?.device || '/dev/ttyUSB0'
         this.formData.serial.baudRate = p.options?.baudRate || 115200
       } else if (type.includes('telnet')) {
         this.selectedTemplate = 'telnet'
+        Object.assign(this.formData.telnet, p.options || {})
         this.formData.telnet.host = p.options?.host || ''
         this.formData.telnet.port = p.options?.port || 23
       } else if (type.includes('raw')) {
@@ -1117,6 +1127,10 @@ export class WorkbenchNewSessionModalComponent implements OnInit, OnDestroy {
         this.formData.ssh.host = p.options?.host || ''
         this.formData.ssh.port = p.options?.port || 22
         this.formData.ssh.user = p.options?.user || 'root'
+        this.formData.ssh.authMethod = p.options?.auth || 'password'
+        this.formData.ssh.privateKey = p.options?.privateKey || ''
+        this.formData.ssh.x11 = p.options?.x11 ?? false
+        this.formData.ssh.agentForward = p.options?.agentForward ?? false
       }
     } else {
       this.isEditing = false
@@ -1161,7 +1175,9 @@ export class WorkbenchNewSessionModalComponent implements OnInit, OnDestroy {
 
   buildProfileObject(): any {
     const id = this.isEditing && this.editingProfileId ? this.editingProfileId : `workbench:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const original = this.originalProfile || {}
     const base: any = {
+      ...JSON.parse(JSON.stringify(original)),
       id,
       name: this.formData.name.trim(),
       group: this.formData.group.trim() || undefined,
@@ -1175,6 +1191,7 @@ export class WorkbenchNewSessionModalComponent implements OnInit, OnDestroy {
     if (this.selectedTemplate === 'ssh') {
       base.type = 'ssh'
       base.options = {
+        ...(original.type === base.type ? original.options : {}),
         host: this.formData.ssh.host.trim(),
         port: this.formData.ssh.port || 22,
         user: this.formData.ssh.user.trim() || 'root',
@@ -1182,11 +1199,13 @@ export class WorkbenchNewSessionModalComponent implements OnInit, OnDestroy {
         x11: this.formData.ssh.x11,
         agentForward: this.formData.ssh.agentForward,
       }
-      if (this.formData.ssh.password) base.options.password = this.formData.ssh.password
+      delete base.options.password
       if (this.formData.ssh.privateKey) base.options.privateKey = this.formData.ssh.privateKey
+      else delete base.options.privateKey
     } else if (this.selectedTemplate === 'telnet') {
       base.type = 'telnet'
       base.options = {
+        ...(original.type === base.type ? original.options : {}),
         host: this.formData.telnet.host.trim(),
         port: this.formData.telnet.port || 23,
         inputMode: this.formData.telnet.inputMode,
@@ -1197,6 +1216,7 @@ export class WorkbenchNewSessionModalComponent implements OnInit, OnDestroy {
     } else if (this.selectedTemplate === 'serial') {
       base.type = 'serial'
       base.options = {
+        ...(original.type === base.type ? original.options : {}),
         port: this.formData.serial.port.trim(),
         baudRate: this.formData.serial.baudRate,
         dataBits: this.formData.serial.dataBits,
@@ -1206,17 +1226,21 @@ export class WorkbenchNewSessionModalComponent implements OnInit, OnDestroy {
     } else if (this.selectedTemplate === 'raw') {
       base.type = 'rawSocket'
       base.options = {
+        ...(original.type === base.type ? original.options : {}),
         host: this.formData.raw.host.trim(),
         port: this.formData.raw.port,
       }
     }
 
+    const previousWorkbench = original.options?.secureWorkbench || {}
     base.options.secureWorkbench = {
+      ...previousWorkbench,
       encoding: this.formData.encoding,
       terminalType: this.formData.terminalType,
       logging: {
+        ...previousWorkbench.logging,
         startLogUponConnect: this.formData.logging.startLogUponConnect,
-        promptForFilename: false,
+        promptForFilename: previousWorkbench.logging?.promptForFilename ?? false,
         logFileName: this.formData.logging.logFileName,
         mode: this.formData.logging.rawLog ? 'raw' : 'transcript',
         appendMode: this.formData.logging.appendMode,
@@ -1227,7 +1251,8 @@ export class WorkbenchNewSessionModalComponent implements OnInit, OnDestroy {
         customDisconnectMsg: this.formData.logging.customDisconnectMsg,
       },
       sftp: {
-        preferredDockMode: 'full',
+        ...previousWorkbench.sftp,
+        preferredDockMode: previousWorkbench.sftp?.preferredDockMode || 'full',
         autoOpenSFTP: this.formData.sftp.autoOpenSFTP,
         initialLocalPath: this.formData.sftp.initialLocalPath,
         initialRemotePath: this.formData.sftp.initialRemotePath,
@@ -1259,13 +1284,18 @@ export class WorkbenchNewSessionModalComponent implements OnInit, OnDestroy {
     }
 
     this.config.save()
+    this.formData.ssh.password = ''
     this.notifications?.info(`已保存会话配置: ${profile.name}`)
     this.dialogService.closeNewSession()
     return profile
   }
 
   async saveAndConnect(): Promise<void> {
-    const profile = this.save()
+    const password = this.formData.ssh.authMethod === 'password' ? this.formData.ssh.password : ''
+    const saved = this.save()
+    const profile = saved ? JSON.parse(JSON.stringify(saved)) : null
+    if (profile?.type === 'ssh' && password) profile.options.password = password
+    this.formData.ssh.password = ''
     if (profile && this.profilesService) {
       try {
         await this.profilesService.openNewTabForProfile(profile)
@@ -1276,6 +1306,7 @@ export class WorkbenchNewSessionModalComponent implements OnInit, OnDestroy {
   }
 
   cancel(): void {
+    this.formData.ssh.password = ''
     this.dialogService.closeNewSession()
   }
 }

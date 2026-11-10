@@ -1,17 +1,19 @@
 import { Injectable } from '@angular/core'
 import { TerminalDecorator, BaseTerminalTabComponent } from 'tabby-terminal'
 import { ConfigService } from 'tabby-core'
-import { Subscription } from 'rxjs'
+import { Subject, Subscription } from 'rxjs'
 import { StatefulCodec } from './stateful-codec'
 import { bindSessionCodec } from './session-codec-binding'
 import { WorkbenchEncoding, DEFAULT_WORKBENCH_CONFIG } from '../config/config.model'
 
 @Injectable({ providedIn: 'root' })
 export class CodecRegistryService {
+  readonly changed$ = new Subject<BaseTerminalTabComponent>()
   private codecs = new WeakMap<BaseTerminalTabComponent, StatefulCodec>()
 
   register(tab: BaseTerminalTabComponent, codec: StatefulCodec): void {
     this.codecs.set(tab, codec)
+    this.changed$.next(tab)
   }
 
   get(tab: BaseTerminalTabComponent): StatefulCodec | undefined {

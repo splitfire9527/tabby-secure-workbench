@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto'
 import * as fs from 'fs'
 import * as path from 'path'
 import * as os from 'os'
@@ -50,6 +51,8 @@ export class SessionLogger {
   private currentBytesWritten = 0
   private fileModeLocked = false
   private fullLogPath = ''
+  private rotationSuffix = ''
+  private pendingCloses = new Set<Promise<void>>()
   private initialDay = new Date().getDate()
 
   readonly options: LoggerConfigInput
@@ -94,6 +97,7 @@ export class SessionLogger {
     this.fullLogPath = path.isAbsolute(rawTemplate)
       ? path.join(path.dirname(rawTemplate), filename)
       : path.join(targetDir, filename)
+    if (this.rotationSuffix) this.fullLogPath += this.rotationSuffix
     this.fileModeLocked = false
 
     // Append vs Overwrite
@@ -257,10 +261,7 @@ export class SessionLogger {
       if (nowDay !== this.initialDay) {
         this.initialDay = nowDay
         this.flush()
-        if (this.transcriptStream) this.transcriptStream.end()
-        if (this.rawStream) this.rawStream.end()
-        this.currentBytesWritten = 0
-        this.initStreams()
+        this.rotateStreams()
         return
       }
     }
@@ -272,15 +273,25 @@ export class SessionLogger {
     const maxBytes = maxMb * 1024 * 1024
     if (this.currentBytesWritten >= maxBytes) {
       this.flush()
-      if (this.transcriptStream) {
-        this.transcriptStream.end()
-      }
-      if (this.rawStream) {
-        this.rawStream.end()
-      }
-      this.currentBytesWritten = 0
-      this.initStreams()
+      this.rotateStreams()
     }
+  }
+
+  private rotateStreams(): void {
+    const closing: Promise<void>[] = []
+    for (const stream of [this.transcriptStream, this.rawStream]) {
+      if (stream) closing.push(new Promise(resolve => stream.end(() => resolve())))
+    }
+    if (this.auditWriter) closing.push(this.auditWriter.close())
+    const pending = Promise.all(closing).then(() => { this.pendingCloses.delete(pending) })
+    this.pendingCloses.add(pending)
+    this.transcriptStream = null
+    this.rawStream = null
+    this.auditWriter = null
+    this.currentBytesWritten = 0
+    // Each rotation gets a different file even with a constant filename template.
+    this.rotationSuffix = `.${Date.now()}-${randomBytes(6).toString('hex')}`
+    this.initStreams()
   }
 
   getAuditWriter(): AuditWriter | null {
@@ -318,6 +329,6 @@ export class SessionLogger {
       this.auditWriter = null
     }
 
-    await Promise.all(promises)
+    await Promise.all([...promises, ...this.pendingCloses])
   }
 }
